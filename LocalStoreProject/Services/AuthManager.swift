@@ -6,6 +6,7 @@
 //
 
 import Combine  // Observable Pattern // Donde los componentes estaran notificados si alguna data o variable cambia en la app
+import CoreData
 // Como un state en React
 import FirebaseAuth
 import FirebaseFirestore
@@ -26,48 +27,91 @@ struct SimpleError: Error {
 
 class AuthManager: ObservableObject {
 
-    @Published var user: User?  // Lo mismo que FirebaseAuth.user? // Este user es para mantener el user durante toda la app
-    @Published var twitterUser: TwitterUser?  // Este user es para traer toda la informacion de la db
-    private let db = Firestore.firestore()
+    @Published var user: FirebaseAuth.User?  // user only for the auth from firebase
+    @Published var currentUser: User?  // Este user es para mantener el user durante toda la app // coredata
 
-    init() {
+    private let db = Firestore.firestore()
+    private let viewContext: NSManagedObjectContext
+
+    var isAuthenticated: Bool {
+        return user != nil && currentUser != nil
+    }
+
+    init(viewContext: NSManagedObjectContext) {
+
+        self.viewContext = viewContext
+
         self.user = Auth.auth().currentUser  // Guardara el usuario para tenerlo presente en toda la app
         if let currentUser = self.user {
-            fetchTwitterUserData(uid: currentUser.uid, completion: { _ in })
+            fetchUserData(uid: currentUser.uid, completion: { _ in })
         }
     }
 
-    // Fetch User Data
+    // Fetch3 Data
 
-    private func fetchTwitterUserData(
+    private func fetchUserData(
         uid: String,
-        completion: @escaping (Result<TwitterUser?, Error>) -> Void
+        completion: @escaping (Result<User?, Error>) -> Void
     ) {
 
-        guard let uuid = Auth.auth().currentUser?.uid else {
-            DispatchQueue.main.async {
-                self.twitterUser = nil // this will update the user
+        // First search in CoreData
+        let request: NSFetchRequest<User> = User.fetchRequest()
+        request.predicate = NSPredicate(format: "firebaseUUID == %@", uid)
+        request.fetchLimit = 1
+
+        do {
+            let users = try viewContext.fetch(request)
+            if let localUser = users.first {
+                DispatchQueue.main.async {
+                    self.currentUser = localUser
+                }
+                completion(.success(localUser))
+                return
             }
-            completion(.success(nil))
-            return
+        } catch {
+            print("Error searching in CoreData: \(error.localizedDescription)")
         }
 
-        db.collection("users").document(uuid).getDocument { snapshot, error in
+        // If not exists in CoreData, search in Firebase
+
+        db.collection("users").document(uid).getDocument {
+            snapshot,
+            error in
             if let error = error {
                 print("Error fetching user data: \(error)")
+                completion(.failure(error))
                 return
             }
 
-            do {
-                let twitteruser = try snapshot?.data(as: TwitterUser.self)
+            guard let data = snapshot?.data() else {
                 DispatchQueue.main.async {
-                    self.twitterUser = twitteruser
+                    self.currentUser = nil
                 }
-                completion(.success(twitteruser))
-            } catch {
-                print(error.localizedDescription)
-                completion(.failure(error))
+                completion(.success(nil))
+                return
             }
+
+            DispatchQueue.main.async {
+                let newUser = User(context: self.viewContext)
+                newUser.id =
+                    UUID(uuidString: data["id"] as? String ?? "") ?? UUID()
+                newUser.firebaseUUID = uid
+                newUser.name = data["name"] as? String
+                newUser.email = data["email"] as? String
+                newUser.profileImageURL = data["profileImageURL"] as? String
+
+                do {
+                    try self.viewContext.save()
+                    self.currentUser = newUser
+                    completion(.success(newUser))
+                } catch {
+                    print(
+                        "Error saving user data in CoreData: \(error.localizedDescription)"
+                    )
+                    completion(.failure(error))
+                }
+            }
+
         }
     }
 
@@ -76,11 +120,9 @@ class AuthManager: ObservableObject {
     func registerNewUser(
         email: String,
         password: String,
-        fullname: String,
-        username: String,
-        bio: String? = nil,
+        name: String,
         profileImage: UIImage? = nil,
-        completion: @escaping (Result<User, Error>) -> Void
+        completion: @escaping (Result<FirebaseAuth.User, Error>) -> Void
     ) {
 
         Auth.auth().createUser(withEmail: email, password: password) {
@@ -89,42 +131,19 @@ class AuthManager: ObservableObject {
                 print(error.localizedDescription)
                 completion(.failure(error))
                 return
-            } else if let user = result?.user {
-                self.user = user
-                
+            } else if let firebaseUser = result?.user {
+                self.user = firebaseUser
+
                 self.createUserFirestore(
-                    userId: user.uid,
+                    userId: firebaseUser.uid,
                     email: email,
-                    fullName: fullname,
-                    username: username,
-                    bio: bio,
+                    name: name,
                     profileImage: profileImage,
                     completion: completion
                 )
-                    
+
             }
         }
-    }
-
-    // Method for checking username in the db (no repeat username)
-
-    private func checkUsername(
-        username: String,
-        completion: @escaping (Bool) -> Void
-    ) {
-        db
-            .collection("users")
-            .whereField("Username", isEqualTo: username.lowercased())
-            .getDocuments { (snapshot, error) in
-                if let error = error {
-                    print("Error username: \(error)")
-                    completion(false)
-                    return
-                }
-
-                completion(snapshot?.documents.isEmpty ?? true)
-
-            }
     }
 
     // CreateUserFirestore Method (This method is to create the user in the firestore using the same id as the Auth)
@@ -132,53 +151,43 @@ class AuthManager: ObservableObject {
     private func createUserFirestore(
         userId: String,
         email: String,
-        fullName: String,
-        username: String,
-        bio: String?,
+        name: String,
         profileImage: UIImage?,
-        completion: @escaping (Result<User, Error>) -> Void
+        completion: @escaping (Result<FirebaseAuth.User, Error>) -> Void
     ) {
-        self.checkUsername(username: username) {
-            isAvailable in
-            guard isAvailable else {
-                completion(
-                    .failure(
-                        SimpleError(
-                            "Username is already in use, please use another"
-                        )
-                    )
-                )
-                return
-            }
-            
-            self.uploadProfileImage(userId: userId, image: profileImage) { result in
-                switch result {
-                case .success(let imageUrl):
-                    let twitterUser = TwitterUser(
-                        email: email,
-                        Fullname: fullName,
-                        Username: username,
-                        Bio: bio,
-                        ProfileImageURL: imageUrl
-                    )
-                    
-                    
-                    self.createUserCollection(userId: userId, twitterUser: twitterUser){
-                        error in
-                        if let error = error{
-                            completion(.failure(error))
+
+        self.uploadProfileImage(userId: userId, image: profileImage) { result in
+            switch result {
+            case .success(let imageUrl):
+                // Create the user in CoreData
+                DispatchQueue.main.async {
+                    let newUser = User(context: self.viewContext)
+                    newUser.id = UUID()
+                    newUser.firebaseUUID = userId
+                    newUser.name = name
+                    newUser.email = email
+                    newUser.profileImageURL = imageUrl.isEmpty ? nil : imageUrl
+
+                    do {
+                        try self.viewContext.save()
+                        self.currentUser = newUser
+
+                        self.createUserCollection(user: newUser) {
+                            error in
+                            if let error = error {
+                                completion(.failure(error))
+                            } else {
+                                completion(.success((self.user!)))
+                            }
+
                         }
-                        else{
-                            self.twitterUser = twitterUser
-                            completion(.success((self.user!)))
-                        }
-                        
+                    } catch {
+                        completion(.failure(error))
                     }
-                    
-                case .failure(let error):
-                  completion(.failure(error))
-                                              
                 }
+            case .failure(let error):
+                completion(.failure(error))
+
             }
         }
     }
@@ -208,49 +217,63 @@ class AuthManager: ObservableObject {
 
         profileImageRef.putData(imageData, metadata: metadata) { _, error in
             if let error = error {
-                completion(.failure(SimpleError(
-                    "Error uploading the image: \(error.localizedDescription)"
-                )))
+                completion(.failure(SimpleError("Error uploading the image: \(error.localizedDescription)")))
                 return
             }
-        }
-
-        profileImageRef.downloadURL { (url, error) in
-            if let error = error {
-                completion(
-                    .failure(
-                        SimpleError(
-                            "Error getting download the URL: \(error.localizedDescription)"
+            
+            profileImageRef.downloadURL { (url, error) in
+                if let error = error {
+                    completion(
+                        .failure(
+                            SimpleError(
+                                "Error getting download the URL: \(error.localizedDescription)"
+                            )
                         )
                     )
-                )
-                return
-            } else if let url = url {
-                completion(.success(url.absoluteString))
+                    return
+                }
+                let urlString = url?.absoluteString ?? ""
+                                print("✅ Download URL obtained: \(urlString)")
+                                completion(.success(urlString))
+                
             }
         }
     }
 
-    // createUserCollection Method to push into the firestore
+    // createUserCollection Method to push into the firestore the user that is created first in CoreData
 
     private func createUserCollection(
-        userId: String,
-        twitterUser: TwitterUser,
+        user: User,
         completion: @escaping (Error?) -> Void
     ) {
-        do {
-            try db
-                .collection("users")
-                .document(userId).setData(from: twitterUser)
-            
-                DispatchQueue.main.async {
-                    self.twitterUser = twitterUser // this will update the user
-                    }
-                completion(nil)
+
+        guard let firebaseUID = user.firebaseUUID else {
+            completion(SimpleError("User does not have a firebase UUID"))
+            return
         }
-        catch {
-            completion(error)
-        }
+
+        var userData: [String: Any] = [
+            "id": user.id?.uuidString ?? "",
+            "firebaseUUID": firebaseUID,
+            "name": user.name ?? "",
+            "email": user.email ?? "",
+            "profileImageURL": user.profileImageURL ?? "",
+
+        ]
+        db
+            .collection("users")
+            .document(firebaseUID).setData(userData) {
+                error in
+                if let error = error {
+                    print(
+                        "Error syncing to Firestore: \(error.localizedDescription)"
+                    )
+                    completion(error)
+                } else {
+                    print("✅ Usuario sincronizado con Firestore")
+                    completion(nil)
+                }
+            }
     }
 
     // Login Method
@@ -258,7 +281,7 @@ class AuthManager: ObservableObject {
     func login(
         email: String,
         password: String,
-        completion: @escaping (Result<User, Error>) -> Void
+        completion: @escaping (Result<FirebaseAuth.User, Error>) -> Void
     ) {
         Auth.auth().signIn(withEmail: email, password: password) {
             (result, error) in
@@ -266,11 +289,15 @@ class AuthManager: ObservableObject {
             if let error = error {
                 completion(.failure(error))
                 return
-            } else if let user = result?.user {
-                self.user = user
-                self.fetchTwitterUserData(uid: user.uid){
-                    result in
-                    completion(.success(user))
+            } else if let firebaseUser = result?.user {
+                self.user = firebaseUser
+                self.fetchUserData(uid: firebaseUser.uid) { result in
+                    switch result {
+                    case .success(_):
+                        completion(.success(firebaseUser))
+                    case .failure(let error):
+                        completion(.failure(error))
+                    }
                 }
             }
         }
@@ -282,7 +309,7 @@ class AuthManager: ObservableObject {
         do {
             try Auth.auth().signOut()
             self.user = nil
-            self.twitterUser = nil
+            self.currentUser = nil
             completion(.success(()))
         } catch let signOutError as NSError {
             print("Error signing out: \(signOutError)")
@@ -290,4 +317,82 @@ class AuthManager: ObservableObject {
         }
     }
 
+    // Update Profile
+
+    func updateProfile(
+        name: String?,
+        profileImage: UIImage?,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard let currentUser = self.currentUser,
+            let firebaseUID = currentUser.firebaseUUID
+        else {
+            completion(.failure(SimpleError("No user logged in")))
+            return
+        }
+
+        // Si hay nueva imagen, subirla primero
+        if let newImage = profileImage {
+            uploadProfileImage(userId: firebaseUID, image: newImage) { result in
+                switch result {
+                case .success(let imageUrl):
+                    self.updateUserData(
+                        user: currentUser,
+                        name: name,
+                        imageUrl: imageUrl,
+                        completion: completion
+                    )
+                case .failure(let error):
+                    completion(.failure(error))
+                }
+            }
+        } else {
+            // Sin imagen nueva, solo actualizar datos
+            self.updateUserData(
+                user: currentUser,
+                name: name,
+                imageUrl: nil,
+                completion: completion
+            )
+        }
+    }
+
+    // Update User Data From CoreData First
+
+    func updateUserData(
+        user: User,
+        name: String?,
+        imageUrl: String?,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+
+        DispatchQueue.main.async {
+            // Only update if user write something in the text boxes in CoreData
+            if let name = name {
+                user.name = name
+            }
+
+            if let imageUrl = imageUrl, !imageUrl.isEmpty {
+                user.profileImageURL = imageUrl
+            }
+
+            do {
+                try self.viewContext.save()
+
+                // Sync changes to FireStore
+
+                self.createUserCollection(user: user) { error in
+                    if let error = error {
+                        completion(.failure(error))
+                    } else {
+                        completion(.success(()))
+                    }
+                }
+            } catch {
+                completion(.failure(error))
+            }
+
+        }
+
+    }
 }

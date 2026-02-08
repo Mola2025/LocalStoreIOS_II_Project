@@ -26,12 +26,27 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct LocalStoreProjectApp: App {
     let persistenceController = PersistenceController.shared
+    
+    init(){
+        let context = PersistenceController.shared.container.viewContext
+               _authManager = StateObject(wrappedValue: AuthManager(viewContext: context))
+
+    }
+    
+    @StateObject private var authManager: AuthManager
     // register app delegate for Firebase setup
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+            if authManager.isAuthenticated{
+                ProfileView()
+                    .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                    .environmentObject(authManager)
+            }
+            else{
+                LoginPage().environmentObject(authManager)
+            }
+            
         }
     }
 }
