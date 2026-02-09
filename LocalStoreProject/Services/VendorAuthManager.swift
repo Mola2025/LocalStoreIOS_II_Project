@@ -1,8 +1,8 @@
 //
-//  AuthManager.swift
-//  AuthFirebaseExample
+//  VendorAuthManager.swift
+//  LocalStoreProject
 //
-//  Created by David Molano on 2025-10-27.
+//  Created by David Molano on 2026-02-08.
 //
 
 import Combine  // Observable Pattern // Donde los componentes estaran notificados si alguna data o variable cambia en la app
@@ -13,28 +13,16 @@ import FirebaseFirestore
 import FirebaseStorage
 import Foundation
 
-struct SimpleError: Error {
-    let message: String
-
-    init(_ message: String) {
-        self.message = message
-    }
-
-    var localizedDescription: String {
-        return message
-    }
-}
-
-class AuthManager: ObservableObject {
-
+class VendorAuthManager: ObservableObject{
+    
     @Published var user: FirebaseAuth.User?  // user only for the auth from firebase
-    @Published var currentUser: User?  // Este user es para mantener el user durante toda la app // coredata
+    @Published var currentVendor: Vendor?  // Este user es para mantener el user durante toda la app // coredata
 
     private let db = Firestore.firestore()
     private let viewContext: NSManagedObjectContext
 
     var isAuthenticated: Bool {
-        return user != nil && currentUser != nil
+        return user != nil && currentVendor != nil
     }
 
     init(viewContext: NSManagedObjectContext) {
@@ -43,29 +31,29 @@ class AuthManager: ObservableObject {
 
         self.user = Auth.auth().currentUser  // Guardara el usuario para tenerlo presente en toda la app
         if let currentUser = self.user {
-            fetchUserData(uid: currentUser.uid, completion: { _ in })
+            fetchVendorData(uid: currentUser.uid, completion: { _ in })
         }
     }
-
+    
     // Fetch3 Data
 
-    private func fetchUserData(
+    private func fetchVendorData(
         uid: String,
-        completion: @escaping (Result<User?, Error>) -> Void
+        completion: @escaping (Result<Vendor?, Error>) -> Void
     ) {
 
         // First search in CoreData
-        let request: NSFetchRequest<User> = User.fetchRequest()
+        let request: NSFetchRequest<Vendor> = Vendor.fetchRequest()
         request.predicate = NSPredicate(format: "firebaseUUID == %@", uid)
         request.fetchLimit = 1
 
         do {
-            let users = try viewContext.fetch(request)
-            if let localUser = users.first {
+            let vendors = try viewContext.fetch(request)
+            if let localVendor = vendors.first {
                 DispatchQueue.main.async {
-                    self.currentUser = localUser
+                    self.currentVendor = localVendor
                 }
-                completion(.success(localUser))
+                completion(.success(localVendor))
                 return
             }
         } catch {
@@ -74,36 +62,37 @@ class AuthManager: ObservableObject {
 
         // If not exists in CoreData, search in Firebase
 
-        db.collection("users").document(uid).getDocument {
+        db.collection("vendors").document(uid).getDocument {
             snapshot,
             error in
             if let error = error {
-                print("Error fetching user data: \(error)")
+                print("Error fetching vendor data: \(error)")
                 completion(.failure(error))
                 return
             }
 
             guard let data = snapshot?.data() else {
                 DispatchQueue.main.async {
-                    self.currentUser = nil
+                    self.currentVendor = nil
                 }
                 completion(.success(nil))
                 return
             }
 
             DispatchQueue.main.async {
-                let newUser = User(context: self.viewContext)
-                newUser.id =
+                let newVendor = Vendor(context: self.viewContext)
+                newVendor.id =
                     UUID(uuidString: data["id"] as? String ?? "") ?? UUID()
-                newUser.firebaseUUID = uid
-                newUser.name = data["name"] as? String
-                newUser.email = data["email"] as? String
-                newUser.profileImageURL = data["profileImageURL"] as? String
+                newVendor.firebaseUUID = uid
+                newVendor.name = data["name"] as? String
+                newVendor.email = data["email"] as? String
+                newVendor.vendorDescription = data["vendorDescription"] as? String
+                newVendor.profileImageURL = data["profileImageURL"] as? String
 
                 do {
                     try self.viewContext.save()
-                    self.currentUser = newUser
-                    completion(.success(newUser))
+                    self.currentVendor = newVendor
+                    completion(.success(newVendor))
                 } catch {
                     print(
                         "Error saving user data in CoreData: \(error.localizedDescription)"
@@ -117,10 +106,11 @@ class AuthManager: ObservableObject {
 
     // Register Method For Auth and Creating at the same time calling the method to create the user in the Firestore
 
-    func registerNewUser(
+    func registerNewVendor(
         email: String,
         password: String,
         name: String,
+        description: String,
         profileImage: UIImage? = nil,
         completion: @escaping (Result<FirebaseAuth.User, Error>) -> Void
     ) {
@@ -134,10 +124,11 @@ class AuthManager: ObservableObject {
             } else if let firebaseUser = result?.user {
                 self.user = firebaseUser
 
-                self.createUserFirestore(
+                self.createVendorFirestore(
                     userId: firebaseUser.uid,
                     email: email,
                     name: name,
+                    description: description,
                     profileImage: profileImage,
                     completion: completion
                 )
@@ -148,10 +139,11 @@ class AuthManager: ObservableObject {
 
     // CreateUserFirestore Method (This method is to create the user in the firestore using the same id as the Auth)
 
-    private func createUserFirestore(
+    private func createVendorFirestore(
         userId: String,
         email: String,
         name: String,
+        description: String,
         profileImage: UIImage?,
         completion: @escaping (Result<FirebaseAuth.User, Error>) -> Void
     ) {
@@ -161,18 +153,19 @@ class AuthManager: ObservableObject {
             case .success(let imageUrl):
                 // Create the user in CoreData
                 DispatchQueue.main.async {
-                    let newUser = User(context: self.viewContext)
-                    newUser.id = UUID()
-                    newUser.firebaseUUID = userId
-                    newUser.name = name
-                    newUser.email = email
-                    newUser.profileImageURL = imageUrl.isEmpty ? nil : imageUrl
+                    let newVendor = Vendor(context: self.viewContext)
+                    newVendor.id = UUID()
+                    newVendor.firebaseUUID = userId
+                    newVendor.name = name
+                    newVendor.email = email
+                    newVendor.vendorDescription = description
+                    newVendor.profileImageURL = imageUrl.isEmpty ? nil : imageUrl
 
                     do {
                         try self.viewContext.save()
-                        self.currentUser = newUser
+                        self.currentVendor = newVendor
 
-                        self.createUserCollection(user: newUser) {
+                        self.createVendorCollection(vendor: newVendor) {
                             error in
                             if let error = error {
                                 completion(.failure(error))
@@ -210,7 +203,7 @@ class AuthManager: ObservableObject {
         }
 
         let storageRef = Storage.storage().reference()
-        let profileImageRef = storageRef.child("profileImages/\(userId).jpg")
+        let profileImageRef = storageRef.child("vendorProfileImages/\(userId).jpg")
 
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
@@ -233,6 +226,7 @@ class AuthManager: ObservableObject {
                     return
                 }
                 let urlString = url?.absoluteString ?? ""
+                                print("✅ Download URL obtained: \(urlString)")
                                 completion(.success(urlString))
                 
             }
@@ -241,27 +235,28 @@ class AuthManager: ObservableObject {
 
     // createUserCollection Method to push into the firestore the user that is created first in CoreData
 
-    private func createUserCollection(
-        user: User,
+    private func createVendorCollection(
+        vendor: Vendor,
         completion: @escaping (Error?) -> Void
     ) {
 
-        guard let firebaseUID = user.firebaseUUID else {
+        guard let firebaseUID = vendor.firebaseUUID else {
             completion(SimpleError("User does not have a firebase UUID"))
             return
         }
 
-        var userData: [String: Any] = [
-            "id": user.id?.uuidString ?? "",
+        var vendorData: [String: Any] = [
+            "id": vendor.id?.uuidString ?? "",
             "firebaseUUID": firebaseUID,
-            "name": user.name ?? "",
-            "email": user.email ?? "",
-            "profileImageURL": user.profileImageURL ?? "",
+            "name": vendor.name ?? "",
+            "email": vendor.email ?? "",
+            "vendorDescription": vendor.vendorDescription ?? "",
+            "profileImageURL": vendor.profileImageURL ?? "",
 
         ]
         db
-            .collection("users")
-            .document(firebaseUID).setData(userData) {
+            .collection("vendors")
+            .document(firebaseUID).setData(vendorData) {
                 error in
                 if let error = error {
                     print(
@@ -289,7 +284,7 @@ class AuthManager: ObservableObject {
                 return
             } else if let firebaseUser = result?.user {
                 self.user = firebaseUser
-                self.fetchUserData(uid: firebaseUser.uid) { result in
+                self.fetchVendorData(uid: firebaseUser.uid) { result in
                     switch result {
                     case .success(_):
                         completion(.success(firebaseUser))
@@ -307,7 +302,7 @@ class AuthManager: ObservableObject {
         do {
             try Auth.auth().signOut()
             self.user = nil
-            self.currentUser = nil
+            self.currentVendor = nil
             completion(.success(()))
         } catch let signOutError as NSError {
             print("Error signing out: \(signOutError)")
@@ -319,11 +314,12 @@ class AuthManager: ObservableObject {
 
     func updateProfile(
         name: String?,
+        description: String?,
         profileImage: UIImage?,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        guard let currentUser = self.currentUser,
-            let firebaseUID = currentUser.firebaseUUID
+        guard let currentVendor = self.currentVendor,
+              let firebaseUID = currentVendor.firebaseUUID
         else {
             completion(.failure(SimpleError("No user logged in")))
             return
@@ -334,9 +330,10 @@ class AuthManager: ObservableObject {
             uploadProfileImage(userId: firebaseUID, image: newImage) { result in
                 switch result {
                 case .success(let imageUrl):
-                    self.updateUserData(
-                        user: currentUser,
+                    self.updateVendorData(
+                        vendor: currentVendor,
                         name: name,
+                        description: description,
                         imageUrl: imageUrl,
                         completion: completion
                     )
@@ -346,9 +343,10 @@ class AuthManager: ObservableObject {
             }
         } else {
             // Sin imagen nueva, solo actualizar datos
-            self.updateUserData(
-                user: currentUser,
+            self.updateVendorData(
+                vendor: currentVendor,
                 name: name,
+                description: description,
                 imageUrl: nil,
                 completion: completion
             )
@@ -357,9 +355,10 @@ class AuthManager: ObservableObject {
 
     // Update User Data From CoreData First
 
-    func updateUserData(
-        user: User,
+    func updateVendorData(
+        vendor: Vendor,
         name: String?,
+        description: String?,
         imageUrl: String?,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
@@ -367,11 +366,15 @@ class AuthManager: ObservableObject {
         DispatchQueue.main.async {
             // Only update if user write something in the text boxes in CoreData
             if let name = name {
-                user.name = name
+                vendor.name = name
+            }
+            
+            if let description = description{
+                vendor.vendorDescription = description
             }
 
             if let imageUrl = imageUrl, !imageUrl.isEmpty {
-                user.profileImageURL = imageUrl
+                vendor.profileImageURL = imageUrl
             }
 
             do {
@@ -379,7 +382,7 @@ class AuthManager: ObservableObject {
 
                 // Sync changes to FireStore
 
-                self.createUserCollection(user: user) { error in
+                self.createVendorCollection(vendor: vendor) { error in
                     if let error = error {
                         completion(.failure(error))
                     } else {
