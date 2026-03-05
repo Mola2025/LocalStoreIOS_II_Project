@@ -33,10 +33,22 @@ struct LocalStoreProjectApp: App {
         _vendorAuthManager = StateObject(
             wrappedValue: VendorAuthManager(viewContext: context)
         )
+        _productHolder = StateObject(
+            wrappedValue: ProductHolder(context)
+        )
+        _cartHolder = StateObject(
+            wrappedValue: CartHolder(context)
+        )
+        _orderHolder = StateObject(
+            wrappedValue: OrderHolder(context)
+        )
     }
 
     @StateObject private var authManager: AuthManager
     @StateObject private var vendorAuthManager: VendorAuthManager
+    @StateObject private var productHolder: ProductHolder
+    @StateObject private var cartHolder: CartHolder
+    @StateObject private var orderHolder: OrderHolder
     // register app delegate for Firebase setup
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     var body: some Scene {
@@ -48,23 +60,22 @@ struct LocalStoreProjectApp: App {
                 )
                 .environmentObject(authManager)
                 .environmentObject(vendorAuthManager)
-
+                .environmentObject(productHolder)
+                .environmentObject(cartHolder)
+                .environmentObject(orderHolder)
         }
     }
 }
 
 struct ContentRoutes: View {
-
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var vendorAuthManager: VendorAuthManager
 
     var body: some View {
         Group {
-            if authManager.isAuthenticated {
-                ProfileView()
+            if authManager.isAuthenticated || vendorAuthManager.isAuthenticated {
+                ContentView()
                     .environmentObject(authManager)
-            } else if vendorAuthManager.isAuthenticated {
-                VendorProfileView()
                     .environmentObject(vendorAuthManager)
             } else {
                 LoginPage()

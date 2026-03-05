@@ -39,7 +39,7 @@ struct ProductCard: View {
                 Text(product.displayName)
                     .font(.headline)
 
-                Text(product.price, format: .currency(code: "USD"))
+                Text(product.price, format: .currency(code: "CAD"))
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundColor(.blue)

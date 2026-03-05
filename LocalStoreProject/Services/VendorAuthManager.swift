@@ -245,7 +245,7 @@ class VendorAuthManager: ObservableObject{
             return
         }
 
-        var vendorData: [String: Any] = [
+        let vendorData: [String: Any] = [
             "id": vendor.id?.uuidString ?? "",
             "firebaseUUID": firebaseUID,
             "name": vendor.name ?? "",

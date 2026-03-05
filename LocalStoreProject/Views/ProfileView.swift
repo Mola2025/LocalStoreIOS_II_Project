@@ -83,9 +83,10 @@ struct ProfileView: View {
                     }
                 }
                 
-            }            .navigationTitle("Profile")
-                .navigationBarTitleDisplayMode(.large)
-            .onAppear{
+            }
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.large)
+            .onAppear {
                 loadUser()
             }
         }

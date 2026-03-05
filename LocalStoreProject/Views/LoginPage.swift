@@ -149,7 +149,7 @@ struct LoginPage: View {
                     result in
                     isLoading = false
                     switch result {
-                    case .success(let success):
+                    case .success:
                         print("User Logged In ")
                         
                     case .failure(let error):
@@ -174,7 +174,7 @@ struct LoginPage: View {
                     result in
                     isLoading = false
                     switch result {
-                    case .success(let success):
+                    case .success:
                         print("Vendor Logged In ")
                     case .failure(let error):
                         self.errorMessage = error.localizedDescription

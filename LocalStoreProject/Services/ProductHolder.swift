@@ -30,12 +30,6 @@ final class ProductHolder: ObservableObject {
     }
         
     func fetchProducts(completion: @escaping (Result<Void, Error>) -> Void) {
-//        //check if user is authenticated
-//        guard let uid = Auth.auth().currentUser?.uid else {
-//            completion(.failure(SimpleError("No user logged in.")))
-//            return
-//        }
-        
         db.collection("products")
             .getDocuments { [weak self] snapshot, error in
             guard let self = self else { return }
@@ -79,7 +73,7 @@ final class ProductHolder: ObservableObject {
                     }
                 }
                 
-                // Save and refresh on main thread
+                //save and refresh on main thread
                 do {
                     try self.context.save()
                     DispatchQueue.main.async {
@@ -385,7 +379,7 @@ final class ProductHolder: ObservableObject {
         vendorRequest.predicate = NSPredicate(format: "firebaseUUID == %@", uid)
         
         guard let vendor = try? context.fetch(vendorRequest).first else {
-            completion(.failure(SimpleError("Vendor not found in local database")))
+            completion(.failure(SimpleError("Vendor not found in local firestore")))
             return
         }
         

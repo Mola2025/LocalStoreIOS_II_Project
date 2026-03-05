@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreData
+import FirebaseAuth
 
 extension Product{
     
@@ -30,5 +31,15 @@ extension Product{
         return !name.isEmpty &&
         price > 0 &&
         stock >= 0
+    }
+    
+    func isOwnedByCurrentVendor() -> Bool {
+        guard
+            let vendorFirebaseUUID = vendor?.firebaseUUID,
+            let uid = Auth.auth().currentUser?.uid
+        else {
+            return false
+        }
+        return vendorFirebaseUUID == uid
     }
 }

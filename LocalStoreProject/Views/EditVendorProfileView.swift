@@ -236,6 +236,7 @@ struct EditVendorProfileView: View {
             ) { result in
                 switch result {
                 case .success():
+                    self.vendorAuthManager.currentVendor = self.vendorAuthManager.currentVendor
                     self.showSuccess("Profile Updated Successfully")
 
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

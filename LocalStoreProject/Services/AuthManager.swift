@@ -56,7 +56,7 @@ class AuthManager: ObservableObject {
 
         // First search in CoreData
         let request: NSFetchRequest<User> = User.fetchRequest()
-        request.predicate = NSPredicate(format: "firebaseUUID == %@", uid)
+        request.predicate = NSPredicate(format: "firebaseUUID == %@", uid) // WHERE firebaseUUID == uid
         request.fetchLimit = 1
 
         do {
@@ -83,6 +83,7 @@ class AuthManager: ObservableObject {
                 return
             }
 
+            //data() returns a Dictionary filled with data
             guard let data = snapshot?.data() else {
                 DispatchQueue.main.async {
                     self.currentUser = nil
@@ -251,7 +252,7 @@ class AuthManager: ObservableObject {
             return
         }
 
-        var userData: [String: Any] = [
+        let userData: [String: Any] = [
             "id": user.id?.uuidString ?? "",
             "firebaseUUID": firebaseUID,
             "name": user.name ?? "",

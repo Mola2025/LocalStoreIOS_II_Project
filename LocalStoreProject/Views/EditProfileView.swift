@@ -121,7 +121,6 @@ struct EditProfileView: View {
                 Divider()
 
                 // Form Fields to change profile info
-
                 VStack(alignment: .leading, spacing: 20) {
 
                     Group {
@@ -220,6 +219,7 @@ struct EditProfileView: View {
             ) { result in
                 switch result {
                 case .success():
+                    self.authManager.currentUser = self.authManager.currentUser
                     self.showSuccess("Profile Updated Successfully")
 
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

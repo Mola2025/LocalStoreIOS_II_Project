@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-struct AddToCartToast: View {
+struct AddedToCartToast: View {
     var body: some View {
         VStack {
             Spacer()
@@ -25,5 +25,5 @@ struct AddToCartToast: View {
 }
 
 #Preview {
-    AddToCartToast()
+    AddedToCartToast()
 }
