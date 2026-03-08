@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="24299" systemVersion="25A354" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="24299" systemVersion="25A362" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
     <entity name="Address" representedClassName="Address" syncable="YES" codeGenerationType="class">
-        <relationship name="user" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="User"/>
-        <relationship name="vendor" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Vendor"/>
+        <attribute name="city" optional="YES" attributeType="String"/>
+        <attribute name="latitude" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="longitude" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="street" optional="YES" attributeType="String"/>
+        <relationship name="user" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="User" inverseName="address" inverseEntity="User"/>
+        <relationship name="vendor" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Vendor" inverseName="address" inverseEntity="Vendor"/>
     </entity>
     <entity name="CartItem" representedClassName="CartItem" syncable="YES" codeGenerationType="class">
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
@@ -44,7 +48,7 @@
         <attribute name="vendorId" optional="YES" attributeType="String"/>
         <relationship name="cartItems" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="CartItem" inverseName="product" inverseEntity="CartItem"/>
         <relationship name="category" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Category" inverseName="products" inverseEntity="Category"/>
-        <relationship name="vendor" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Vendor"/>
+        <relationship name="vendor" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Vendor" inverseName="products" inverseEntity="Vendor"/>
     </entity>
     <entity name="User" representedClassName="User" syncable="YES" codeGenerationType="class">
         <attribute name="email" optional="YES" attributeType="String"/>
@@ -52,7 +56,7 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="name" optional="YES" attributeType="String"/>
         <attribute name="profileImageURL" optional="YES" attributeType="String"/>
-        <relationship name="address" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="Address"/>
+        <relationship name="address" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="Address" inverseName="user" inverseEntity="Address"/>
         <relationship name="cartItems" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="CartItem" inverseName="user" inverseEntity="CartItem"/>
         <relationship name="orders" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Order" inverseName="user" inverseEntity="Order"/>
     </entity>
@@ -63,7 +67,7 @@
         <attribute name="name" optional="YES" attributeType="String"/>
         <attribute name="profileImageURL" optional="YES" attributeType="String"/>
         <attribute name="vendorDescription" optional="YES" attributeType="String"/>
-        <relationship name="address" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Address"/>
-        <relationship name="products" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Product"/>
+        <relationship name="address" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="Address" inverseName="vendor" inverseEntity="Address"/>
+        <relationship name="products" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Product" inverseName="vendor" inverseEntity="Product"/>
     </entity>
 </model>

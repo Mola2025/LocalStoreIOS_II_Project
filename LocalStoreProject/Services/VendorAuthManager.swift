@@ -88,6 +88,17 @@ class VendorAuthManager: ObservableObject{
                 newVendor.email = data["email"] as? String
                 newVendor.vendorDescription = data["vendorDescription"] as? String
                 newVendor.profileImageURL = data["profileImageURL"] as? String
+                
+                // Save the address (At the beggining is all set to a default value 0.0 and empty string)
+                if let addressData = data["address"] as? [String: Any] {
+                    let address = Address(context: self.viewContext)
+                    address.latitude = addressData["latitude"] as? Double ?? 0.0
+                    address.longitude = addressData["longitude"] as? Double ?? 0.0
+                    address.city = addressData["city"] as? String ?? ""
+                    address.street = addressData["street"] as? String ?? ""
+                    newVendor.address = address
+                    address.vendor = newVendor
+                }
 
                 do {
                     try self.viewContext.save()

@@ -100,6 +100,17 @@ class AuthManager: ObservableObject {
                 newUser.name = data["name"] as? String
                 newUser.email = data["email"] as? String
                 newUser.profileImageURL = data["profileImageURL"] as? String
+                
+                // Save the address (At the beggining is all set to a default value 0.0 and empty string)
+                if let addressData = data["address"] as? [String: Any] {
+                    let address = Address(context: self.viewContext)
+                    address.latitude = addressData["latitude"] as? Double ?? 0.0
+                    address.longitude = addressData["longitude"] as? Double ?? 0.0
+                    address.city = addressData["city"] as? String ?? ""
+                    address.street = addressData["street"] as? String ?? ""
+                    newUser.address = address
+                    address.user = newUser
+                }
 
                 do {
                     try self.viewContext.save()
