@@ -21,6 +21,14 @@ struct VendorProfileView: View {
     @State private var currentVendor: Vendor? = nil
     @State private var errorMessage: String? = nil
     
+    // For the address
+    @State private var showAddressPicker = false
+    
+    // For the Toast
+    @State private var showToast = false
+    @State private var toastMessage = ""
+    @State private var toastIsError = false
+    
     var body: some View {
         NavigationView{
             ScrollView {
@@ -93,18 +101,67 @@ struct VendorProfileView: View {
                         
                         Divider()
                         
-                        // TODO: Add section for products management
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("My Products")
+                        VStack(alignment: .leading,spacing: 12){
+                            Text("Store Location")
                                 .font(.title2)
                                 .bold()
                                 .padding(.horizontal)
                             
-                            Text("Product management coming soon...")
-                                .foregroundColor(.gray)
+                            if let address = vendor.address, address.hasValidCoordinates {
+                                AddressMiniMapView(
+                                    coordinate: address.coordinate,
+                                    addressText: address.displayAddress,
+                                    onEditTapped: {
+                                        showAddressPicker = true
+                                    }
+                                )
+                            }
+                            else{
+                                VStack(spacing: 12){
+                                    Image(systemName: "mappin.slash")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.gray)
+                                    Text("No Store Location Registered")
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                    Text("Add your store location so customer can find you on the map")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.center)
+                                    
+                                    Button{
+                                        showAddressPicker = true
+                                    } label: {
+                                        Label("Add Store Location", systemImage: "plus")
+                                            .frame(maxWidth:.infinity)
+                                            .padding()
+                                            .background(Color.blue)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(12)
+                                    }.padding(.horizontal)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.gray.opacity(0.05))
+                                .cornerRadius(12)
                                 .padding(.horizontal)
-                        }
-                        .padding(.vertical)
+                            }
+                        }.padding(.vertical)
+                        
+                        Divider()
+                        
+//                        // TODO: Add section for products management
+//                        VStack(alignment: .leading, spacing: 12) {
+//                            Text("My Products")
+//                                .font(.title2)
+//                                .bold()
+//                                .padding(.horizontal)
+//                            
+//                            Text("Product management coming soon...")
+//                                .foregroundColor(.gray)
+//                                .padding(.horizontal)
+//                        }
+//                        .padding(.vertical)
                     }
                 }
                 
@@ -113,12 +170,59 @@ struct VendorProfileView: View {
             .onAppear{
                 loadVendor()
             }
+            .sheet(isPresented: $showAddressPicker){
+                AddressPickerView(
+                    onSave: {
+                        lat,
+                        lon,
+                        city,
+                        street in
+                        saveAddress(
+                            lat: lat,
+                            lon: lon,
+                            city: city,
+                            street: street
+                        )
+                    },
+                    initialCoordinate: currentVendor?.address?.coordinate
+                )
+            }
+            .toast(
+                isPresented: $showToast,
+                message: toastMessage,
+                isError: toastIsError
+            )
         }
     }
     private func loadVendor(){
         if let vendor = vendorAuthManager.currentVendor{
             self.currentVendor = vendor
         }
+    }
+    
+    private func saveAddress(lat: Double, lon: Double, city: String, street: String){
+        guard let vendor = currentVendor else {return}
+        
+        let manager = AddressManager(viewContext: viewContext)
+        manager
+            .saveAddressForVendor(
+                vendor: vendor,
+                latitude: lat,
+                longitude: lon,
+                city: city,
+                street: street
+            ){
+                result in
+                DispatchQueue.main.async{
+                    switch result {
+                    case .success:
+                        self.loadVendor()
+                        self.showSuccess("Store Location Saved Successfully")
+                    case .failure(let error):
+                        self.showError("Error saving location: \(error.localizedDescription)")
+                    }
+                }
+            }
     }
     
     private func signOut() {
@@ -132,6 +236,28 @@ struct VendorProfileView: View {
                 self.errorMessage = error.localizedDescription
                 print("Sign Out Error: \(error.localizedDescription)")
             }
+        }
+    }
+    
+    // Toast Functions
+
+    private func showSuccess(_ message: String) {
+        toastMessage = message
+        toastIsError = false
+        showToast = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            showToast = false
+        }
+    }
+
+    private func showError(_ message: String) {
+        toastMessage = message
+        toastIsError = true
+        showToast = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            showToast = false
         }
     }
 }
