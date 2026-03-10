@@ -135,14 +135,6 @@ struct AddEditProductView: View {
             } message: {
                 Text("Are you sure you want to delete this product? This action cannot be undone.")
             }
-            .overlay {
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.black.opacity(0.1))
-                }
-            }
             .onAppear {
                 productHolder.fetchProducts { result in
                     switch result {

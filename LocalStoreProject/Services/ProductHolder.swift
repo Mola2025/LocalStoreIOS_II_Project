@@ -21,16 +21,29 @@ final class ProductHolder: ObservableObject {
     
     private let context: NSManagedObjectContext
     private let db = Firestore.firestore()
+    private var currentVendor: Vendor?
     
-    init(_ context: NSManagedObjectContext) {
-        self.context = context
+    func setupForVendor(_ vendor: Vendor){
+        self.currentVendor = vendor
         refreshProducts(context)
         refreshCategories(context)
         refreshVendors(context)
     }
+    
+    init(_ context: NSManagedObjectContext) {
+        self.context = context
+    }
         
     func fetchProducts(completion: @escaping (Result<Void, Error>) -> Void) {
-        db.collection("products")
+        guard let vendor = currentVendor,
+              let firebaseUUID = vendor.firebaseUUID else {
+            completion(.failure(SimpleError("No vendor logged in")))
+            return
+        }
+        
+        db.collection("vendors")
+            .document(firebaseUUID)
+            .collection("products")
             .getDocuments { [weak self] snapshot, error in
             guard let self = self else { return }
             
@@ -106,21 +119,38 @@ final class ProductHolder: ObservableObject {
             product.createdAt = timestamp.dateValue()
         }
         
-        //Category
-        if let categoryIdString = data["categoryId"] as? String,
-           let categoryUUID = UUID(uuidString: categoryIdString) {
-            let categoryRequest: NSFetchRequest<Category> = Category.fetchRequest()
-            categoryRequest.predicate = NSPredicate(format: "id == %@", categoryUUID as CVarArg)
-            categoryRequest.fetchLimit = 1
+        //not yet
+//        //Category
+//        if let categoryIdString = data["categoryId"] as? String,
+//           let categoryUUID = UUID(uuidString: categoryIdString) {
+//            let categoryRequest: NSFetchRequest<Category> = Category.fetchRequest()
+//            categoryRequest.predicate = NSPredicate(format: "id == %@", categoryUUID as CVarArg)
+//            categoryRequest.fetchLimit = 1
+//
+//            do {
+//                let results = try context.fetch(categoryRequest)
+//                product.category = results.first
+//            } catch {
+//                print("Error fetching categories: \(error)")
+//            }
+//        }
+        
+        //this helps the vendor get the product UUID and be able to edit their own product
+        if let vendorIdString = data["vendorId"] as? String {
+            let vendorRequest: NSFetchRequest<Vendor> = Vendor.fetchRequest()
+            vendorRequest.predicate = NSPredicate(format: "firebaseUUID == %@", vendorIdString)
+            vendorRequest.fetchLimit = 1
             
             do {
-                let results = try context.fetch(categoryRequest)
-                product.category = results.first
+                let results = try context.fetch(vendorRequest)
+                if let vendor = results.first {
+                    product.vendor = vendor
+                }
             } catch {
-                print("Error fetching categories: \(error)")
+                print("Error fetching vendor: \(error)")
             }
         }
-        
+
         //save context
         do {
             try context.save()
@@ -189,6 +219,10 @@ final class ProductHolder: ObservableObject {
 
         var parts: [NSPredicate] = []
 
+        if let currentVendor = currentVendor {
+            parts.append(NSPredicate(format: "vendor == %@", currentVendor))
+        }
+        
         if let category = selectedCategory {
             parts.append(NSPredicate(format: "category == %@", category))
         }
@@ -276,11 +310,11 @@ final class ProductHolder: ObservableObject {
             if let existingVendor = results.first {
                 vendor = existingVendor
             } else {
-                // Create vendor if it doesn't exist
+
                 vendor = Vendor(context: context)
                 vendor.id = UUID()
                 vendor.firebaseUUID = uid
-                vendor.name = "Vendor" // You might want to get this from user data
+                vendor.name = "Vendor"
                 vendor.email = Auth.auth().currentUser?.email ?? ""
                 try context.save()
             }
@@ -373,7 +407,7 @@ final class ProductHolder: ObservableObject {
 //            completion(.failure(SimpleError("Invalid vendor ID format")))
 //            return
 //        }
-//        
+//
         //Get the vendor from CoreData using the UUID
         let vendorRequest: NSFetchRequest<Vendor> = Vendor.fetchRequest()
         vendorRequest.predicate = NSPredicate(format: "firebaseUUID == %@", uid)

@@ -12,7 +12,7 @@ import FirebaseAuth
 struct ProductsView: View {
     @Environment(\.managedObjectContext) private var context
     @EnvironmentObject private var productHolder: ProductHolder
-    @EnvironmentObject private var authManager: AuthManager
+//    @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var vendorAuthManager: VendorAuthManager
     @EnvironmentObject private var cartHolder: CartHolder
     @State private var searchProduct = ""
@@ -50,10 +50,9 @@ struct ProductsView: View {
                     productHolder.setSearch(newValue, context)
                 }
                 
-                // Categories horizontal scroll
-                if !productHolder.categories.isEmpty {
-                    categoriesBar
-                }
+//                if !productHolder.categories.isEmpty {
+//                    categoriesBar
+//                }
                 
                 // Products grid
                 if productHolder.products.isEmpty {
@@ -67,20 +66,37 @@ struct ProductsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button("All Vendors") {
-                            productHolder.setVendor(nil, context)
+                        if isVendor, let currentVendor = vendorAuthManager.currentVendor {
+                            Button("My Products") {
+                                productHolder.setVendor(currentVendor, context)
+                            }
                         }
-                        ForEach(productHolder.vendors) { vendor in
-                            Button(vendor.name ?? "Vendor") {
-                                productHolder.setVendor(vendor, context)
+                        
+                        else {
+                            Button("All Vendors") {
+                                productHolder.setVendor(nil, context)
+                            }
+                            
+                            ForEach(productHolder.vendors) { vendor in
+                                Button(vendor.name ?? "Vendor") {
+                                    productHolder.setVendor(vendor, context)
+                                }
                             }
                         }
                     } label: {
                         HStack {
-                            Text(productHolder.selectedVendor?.name ?? "Vendors")
-                                .font(.caption)
-                            Image(systemName: "chevron.down")
-                                .font(.caption)
+                            if isVendor, let currentVendor = vendorAuthManager.currentVendor {
+                                Text("My Products")
+                                    .font(.caption)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                            }
+                            else {
+                                Text(productHolder.selectedVendor?.name ?? "")
+                                    .font(.caption)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                            }
                         }
                         .padding(8)
                         .background(Color(.systemGray6))
@@ -99,10 +115,21 @@ struct ProductsView: View {
                 }
             }
             .onAppear {
-                productHolder.refreshProducts(context)
-                if isVendor, let currentVendor = vendorAuthManager.currentVendor {
-                    productHolder.setVendor(currentVendor, context)
+                if let vendor = vendorAuthManager.currentVendor {
+                    productHolder.setupForVendor(vendor)
+                    productHolder.fetchProducts { result in
+                        switch result {
+                        case .success:
+                            break
+                        case .failure(let error):
+                            print("Error loading vendors: \(error.localizedDescription)")
+                        }
+                    }
                 }
+//                productHolder.refreshProducts(context)
+//                if isVendor, let currentVendor = vendorAuthManager.currentVendor {
+//                    productHolder.setVendor(currentVendor, context)
+//                }
             }
             .sheet(item: $selectedProduct) { product in
                 ProductDetailView(product: product)
@@ -125,31 +152,29 @@ struct ProductsView: View {
         }
     }
     
-    private var categoriesBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                // "All" button
-                CategoryChip(
-                    name: "All",
-                    isSelected: productHolder.selectedCategory == nil
-                ) {
-                    productHolder.setCategory(nil, context)
-                }
-                
-                // Category buttons
-                ForEach(productHolder.categories) { category in
-                    CategoryChip(
-                        name: category.name ?? "Category",
-                        isSelected: productHolder.selectedCategory == category
-                    ) {
-                        productHolder.setCategory(category, context)
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-        }
-    }
+//    private var categoriesBar: some View {
+//        ScrollView(.horizontal, showsIndicators: false) {
+//            HStack(spacing: 10) {
+//                CategoryChip(
+//                    name: "All",
+//                    isSelected: productHolder.selectedCategory == nil
+//                ) {
+//                    productHolder.setCategory(nil, context)
+//                }
+//
+//                ForEach(productHolder.categories) { category in
+//                    CategoryChip(
+//                        name: category.name ?? "Category",
+//                        isSelected: productHolder.selectedCategory == category
+//                    ) {
+//                        productHolder.setCategory(category, context)
+//                    }
+//                }
+//            }
+//            .padding(.horizontal)
+//            .padding(.vertical, 8)
+//        }
+//    }
     
     private var productsGrid: some View {
         ScrollView {
@@ -167,34 +192,7 @@ struct ProductsView: View {
             .padding()
         }
     }
-    
-//    private var emptyStateView: some View {
-//        VStack(spacing: 20) {
-//            Image(systemName: "bag")
-//                .font(.system(size: 60))
-//                .foregroundColor(.gray)
-//            
-//            Text("No products found")
-//                .font(.headline)
-//            
-//            Text("Try changing your search or filters")
-//                .font(.subheadline)
-//                .foregroundColor(.gray)
-//            
-//            Button("Clear Filters") {
-//                productHolder.setCategory(nil, context)
-//                productHolder.setVendor(nil, context)
-//                productHolder.setSearch("", context)
-//                searchProduct = ""
-//            }
-//            .padding()
-//            .background(Color.blue)
-//            .foregroundColor(.white)
-//            .cornerRadius(10)
-//        }
-//        .padding()
-//        .frame(maxWidth: .infinity, maxHeight: .infinity)
-//    }
+
     private var emptyStateView: some View {
         Group {
             //just if vendors have no products
@@ -253,22 +251,22 @@ struct ProductsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-
-struct CategoryChip: View {
-    let name: String
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            Text(name)
-                .font(.subheadline)
-                .fontWeight(isSelected ? .semibold : .regular)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(isSelected ? Color.blue : Color(.systemGray5))
-                .foregroundColor(isSelected ? .white : .primary)
-                .cornerRadius(20)
-        }
-    }
-}
+//
+//struct CategoryChip: View {
+//    let name: String
+//    let isSelected: Bool
+//    let action: () -> Void
+//
+//    var body: some View {
+//        Button(action: action) {
+//            Text(name)
+//                .font(.subheadline)
+//                .fontWeight(isSelected ? .semibold : .regular)
+//                .padding(.horizontal, 16)
+//                .padding(.vertical, 8)
+//                .background(isSelected ? Color.blue : Color(.systemGray5))
+//                .foregroundColor(isSelected ? .white : .primary)
+//                .cornerRadius(20)
+//        }
+//    }
+//}
