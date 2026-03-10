@@ -183,5 +183,65 @@ class AddressManager {
             return []
         }
     }
+    
+    func syncAddressFromFirestoreUser(
+        for user: User,
+        completion: @escaping(
+            Result<Void,Error>) -> Void
+    ){
+        guard let firebaseUID = user.firebaseUUID else {return}
+        
+        db.collection("users").document(firebaseUID).getDocument{
+            snapshot, error in
+            if let error = error{
+                completion(.failure(error))
+                return
+            }
+            
+            guard let data = snapshot?.data(),
+                  let addressData = data["address"] as? [String:Any],
+                  let lat = addressData["latitude"] as? Double,
+                  let lon = addressData["longitude"] as? Double,
+                  let city = addressData["city"] as? String,
+                  let street = addressData["street"] as? String
+            else {
+                completion(.success(()))
+                return
+            }
+            
+            self.saveAddressForUser(
+                user: user, latitude: lat, longitude: lon, city: city, street: street, completion: completion)
+        }
+    }
+    
+    func syncAddressFromFirestoreVendor(
+        for vendor: Vendor,
+        completion: @escaping(
+            Result<Void,Error>) -> Void
+    ){
+        guard let firebaseUID = vendor.firebaseUUID else {return}
+        
+        db.collection("vendors").document(firebaseUID).getDocument{
+            snapshot, error in
+            if let error = error{
+                completion(.failure(error))
+                return
+            }
+            
+            guard let data = snapshot?.data(),
+                  let addressData = data["address"] as? [String:Any],
+                  let lat = addressData["latitude"] as? Double,
+                  let lon = addressData["longitude"] as? Double,
+                  let city = addressData["city"] as? String,
+                  let street = addressData["street"] as? String
+            else {
+                completion(.success(()))
+                return
+            }
+            
+            self.saveAddressForVendor(
+                vendor: vendor, latitude: lat, longitude: lon, city: city, street: street, completion: completion)
+        }
+    }
 
 }

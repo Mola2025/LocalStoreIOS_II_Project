@@ -175,9 +175,28 @@ struct ProfileView: View {
     }
 
     private func loadUser() {
-        if let user = authManager.currentUser {
-            self.currentUser = user
+        guard let user = authManager.currentUser else {
+            return
         }
+        self.currentUser = user
+        
+        let manager = AddressManager(viewContext: viewContext)
+        manager
+            .syncAddressFromFirestoreUser(for: user) {
+                result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success:
+                        self.viewContext.refresh(user, mergeChanges: true)
+                        self.currentUser = nil
+                        self.currentUser = user
+                    case .failure(let error):
+                        self.showError(
+                            "Address Sync Failed: \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
     }
 
     private func signOut() {
@@ -215,7 +234,9 @@ struct ProfileView: View {
                 DispatchQueue.main.async {
                     switch result {
                     case .success:
-                        self.loadUser()
+                        self.viewContext.refresh(user, mergeChanges: true)
+                        self.currentUser = nil
+                        self.currentUser = user
                         self.showSuccess("Location Saved Successfully")
                     case .failure(let error):
                         self.showError(

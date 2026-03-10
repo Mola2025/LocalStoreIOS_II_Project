@@ -5,35 +5,50 @@
 //  Created by David Molano on 2026-03-08.
 //
 
-import SwiftUI
 import MapKit
+import SwiftUI
 
 struct AddressMiniMapView: View {
-    
+
     let coordinate: CLLocationCoordinate2D
     let addressText: String
-    
+
     var onEditTapped: () -> Void
-    
-    // Fit camera to full route (best UX)
-    private var region: MKCoordinateRegion{
-        MKCoordinateRegion(
-            center: coordinate,
-            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+
+    @State private var camera: MapCameraPosition
+
+    init(
+        coordinate: CLLocationCoordinate2D,
+        addressText: String,
+        onEditTapped: @escaping () -> Void
+    ) {
+        self.coordinate = coordinate
+        self.addressText = addressText
+        self.onEditTapped = onEditTapped
+        _camera = State(
+            initialValue:
+                .region(
+                    MKCoordinateRegion(
+                        center: coordinate,
+                        span: MKCoordinateSpan(
+                            latitudeDelta: 0.01,
+                            longitudeDelta: 0.01
+                        )
+                    )
+                )
         )
     }
-    
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8){
-            HStack{
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
                 Image(systemName: "mappin.circle.fill")
                     .foregroundColor(.red)
                 Text("My Location")
                     .font(.headline)
                 Spacer()
                 // Button for editing in the addresspickerview
-                Button(action: onEditTapped){
+                Button(action: onEditTapped) {
                     Label("Edit", systemImage: "pencil")
                         .font(.caption)
                         .padding(.horizontal, 10)
@@ -43,9 +58,9 @@ struct AddressMiniMapView: View {
                         .cornerRadius(8)
                 }
             }
-            
-            Map(initialPosition: .region(region)){
-                Marker(addressText,coordinate: coordinate)
+
+            Map(position: $camera) {
+                Marker(addressText, coordinate: coordinate)
                     .tint(.red)
             }
             .mapStyle(.standard)
@@ -53,7 +68,13 @@ struct AddressMiniMapView: View {
             .cornerRadius(12)
             .disabled(true)
             .allowsHitTesting(false)
-            
+            .onChange(of: coordinate.latitude) {
+                moveCamera()
+            }
+            .onChange(of: coordinate.longitude) {
+                moveCamera()
+            }
+
             Text(addressText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -62,6 +83,20 @@ struct AddressMiniMapView: View {
         .background(Color.gray.opacity(0.5))
         .cornerRadius(12)
         .padding(.horizontal)
+    }
+
+    private func moveCamera() {
+        withAnimation {
+            camera = .region(
+                MKCoordinateRegion(
+                    center: coordinate,
+                    span: MKCoordinateSpan(
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01
+                    )
+                )
+            )
+        }
     }
 }
 
