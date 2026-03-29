@@ -31,15 +31,16 @@ struct ContentView: View {
                 }
             
             if authManager.isAuthenticated {
-                ProfileView()
-                    .tabItem {
-                        Label("Profile", systemImage: "person")
-                    }
-                
                 CartView()
                     .tabItem {
                         Label("Cart", systemImage: "cart.fill")
                     }
+                
+                ProfileView()
+                    .tabItem {
+                        Label("Profile", systemImage: "person")
+                    }
+            
             } else if vendorAuthManager.isAuthenticated {
                 VendorProfileView()
                     .tabItem {

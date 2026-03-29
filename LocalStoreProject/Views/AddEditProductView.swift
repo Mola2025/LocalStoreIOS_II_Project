@@ -41,7 +41,6 @@ struct AddEditProductView: View {
                 }
 
                 HStack {
-                    Text("$")
                     TextField("Price", value: $price, format: .currency(code: "CAD"))
                         .keyboardType(.decimalPad)
                 }
@@ -139,7 +138,7 @@ struct AddEditProductView: View {
                 productHolder.fetchProducts { result in
                     switch result {
                     case .success:
-                        print("Products fetched")
+                        print("Product details fetched")
                     case .failure(let error):
                         errorMessage = error.localizedDescription
                     }
@@ -154,6 +153,9 @@ struct AddEditProductView: View {
                     selectedCategory = product.category
                     imageUrl = product.imageUrl ?? ""
                 }
+                
+                //to display the categories
+                productHolder.seedCategories()
             }
             .onChange(of: selectedImage) { _, newValue in
                 Task {

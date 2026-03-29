@@ -50,9 +50,9 @@ struct ProductsView: View {
                     productHolder.setSearch(newValue, context)
                 }
                 
-//                if !productHolder.categories.isEmpty {
-//                    categoriesBar
-//                }
+                if !productHolder.categories.isEmpty {
+                    categoriesBar
+                }
                 
                 // Products grid
                 if productHolder.products.isEmpty {
@@ -120,16 +120,21 @@ struct ProductsView: View {
                     productHolder.fetchProducts { result in
                         switch result {
                         case .success:
-                            break
+                            print("Products for that vendor are shown")
                         case .failure(let error):
                             print("Error loading vendors: \(error.localizedDescription)")
                         }
                     }
+                } else {
+                    productHolder.refreshVendors(context)
+                    productHolder.refreshProducts(context)
                 }
 //                productHolder.refreshProducts(context)
 //                if isVendor, let currentVendor = vendorAuthManager.currentVendor {
 //                    productHolder.setVendor(currentVendor, context)
 //                }
+                //to display the categories
+                productHolder.seedCategories()
             }
             .sheet(item: $selectedProduct) { product in
                 ProductDetailView(product: product)
@@ -152,29 +157,29 @@ struct ProductsView: View {
         }
     }
     
-//    private var categoriesBar: some View {
-//        ScrollView(.horizontal, showsIndicators: false) {
-//            HStack(spacing: 10) {
-//                CategoryChip(
-//                    name: "All",
-//                    isSelected: productHolder.selectedCategory == nil
-//                ) {
-//                    productHolder.setCategory(nil, context)
-//                }
-//
-//                ForEach(productHolder.categories) { category in
-//                    CategoryChip(
-//                        name: category.name ?? "Category",
-//                        isSelected: productHolder.selectedCategory == category
-//                    ) {
-//                        productHolder.setCategory(category, context)
-//                    }
-//                }
-//            }
-//            .padding(.horizontal)
-//            .padding(.vertical, 8)
-//        }
-//    }
+    private var categoriesBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                CategoryChip(
+                    name: "All",
+                    isSelected: productHolder.selectedCategory == nil
+                ) {
+                    productHolder.setCategory(nil, context)
+                }
+
+                ForEach(productHolder.categories) { category in
+                    CategoryChip(
+                        name: category.name ?? "Category",
+                        isSelected: productHolder.selectedCategory == category
+                    ) {
+                        productHolder.setCategory(category, context)
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+    }
     
     private var productsGrid: some View {
         ScrollView {
@@ -251,22 +256,3 @@ struct ProductsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-//
-//struct CategoryChip: View {
-//    let name: String
-//    let isSelected: Bool
-//    let action: () -> Void
-//
-//    var body: some View {
-//        Button(action: action) {
-//            Text(name)
-//                .font(.subheadline)
-//                .fontWeight(isSelected ? .semibold : .regular)
-//                .padding(.horizontal, 16)
-//                .padding(.vertical, 8)
-//                .background(isSelected ? Color.blue : Color(.systemGray5))
-//                .foregroundColor(isSelected ? .white : .primary)
-//                .cornerRadius(20)
-//        }
-//    }
-//}

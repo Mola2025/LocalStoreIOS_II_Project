@@ -71,7 +71,6 @@ final class ProductHolder: ObservableObject {
                     //check if product exists in Firestore
                     let productRequest: NSFetchRequest<Product> = Product.fetchRequest()
                     productRequest.predicate = NSPredicate(format: "id == %@", productUUID as CVarArg)
-                    productRequest.fetchLimit = 1 //to get back one result only
                     
                     do {
                         let results = try self.context.fetch(productRequest)
@@ -119,27 +118,23 @@ final class ProductHolder: ObservableObject {
             product.createdAt = timestamp.dateValue()
         }
         
-        //not yet
-//        //Category
-//        if let categoryIdString = data["categoryId"] as? String,
-//           let categoryUUID = UUID(uuidString: categoryIdString) {
-//            let categoryRequest: NSFetchRequest<Category> = Category.fetchRequest()
-//            categoryRequest.predicate = NSPredicate(format: "id == %@", categoryUUID as CVarArg)
-//            categoryRequest.fetchLimit = 1
-//
-//            do {
-//                let results = try context.fetch(categoryRequest)
-//                product.category = results.first
-//            } catch {
-//                print("Error fetching categories: \(error)")
-//            }
-//        }
-        
+        //Category
+        if let categoryIdString = data["categoryId"] as? String {
+            let categoryRequest: NSFetchRequest<Category> = Category.fetchRequest()
+            categoryRequest.predicate = NSPredicate(format: "id == %@", categoryIdString)
+
+            do {
+                let results = try context.fetch(categoryRequest)
+                product.category = results.first
+            } catch {
+                print("Error fetching categories: \(error)")
+            }
+        }
+
         //this helps the vendor get the product UUID and be able to edit their own product
         if let vendorIdString = data["vendorId"] as? String {
             let vendorRequest: NSFetchRequest<Vendor> = Vendor.fetchRequest()
             vendorRequest.predicate = NSPredicate(format: "firebaseUUID == %@", vendorIdString)
-            vendorRequest.fetchLimit = 1
             
             do {
                 let results = try context.fetch(vendorRequest)
@@ -156,6 +151,39 @@ final class ProductHolder: ObservableObject {
             try context.save()
         } catch {
             print("Error saving the product from Firestore: \(error)")
+        }
+    }
+    
+    func seedCategories() {
+        let categoryNames = [
+            ("fruits_vegetables", "Fruits & Vegetables"),
+            ("meat_fish", "Meat & Fish"),
+            ("bakery", "Bakery"),
+            ("dairy", "Dairy"),
+            ("beverages", "Beverages"),
+            ("homemade", "Homemade"),
+            ("household", "Household")
+        ]
+
+        for (id, categoryName) in categoryNames {
+            let request: NSFetchRequest<Category> = Category.fetchRequest()
+            request.predicate = NSPredicate(format: "id == %@", id)
+            
+            if let existingCategory = try? context.fetch(request).first,
+               existingCategory != nil {
+                continue
+            }
+            
+            let category = Category(context: context)
+            category.id = id
+            category.name = categoryName
+        }
+            
+        do {
+            try context.save()
+            refreshCategories(context)
+        } catch {
+            print("Error seeding categories: \(error)")
         }
     }
 
@@ -264,7 +292,7 @@ final class ProductHolder: ObservableObject {
         guard !n.isEmpty else { return }
 
         let c = Category(context: context)
-        c.id = UUID()
+        c.id = String()
         c.name = n
 
         saveContext(completion: completion)
@@ -344,7 +372,7 @@ final class ProductHolder: ObservableObject {
             "stock": stock,
             "imageUrl": imageUrl,
             "createdAt": Timestamp(date: Date()),
-            "categoryId": category?.id?.uuidString ?? "",
+            "categoryId": category?.id ?? "",
             "categoryName": category?.name ?? "",
             "vendorId": uid,
             "vendorName": vendor.name ?? ""
@@ -433,7 +461,7 @@ final class ProductHolder: ObservableObject {
             "description": desc ?? "",
             "stock": stock,
             "imageUrl": imageUrl,
-            "categoryId": category?.id?.uuidString ?? "",
+            "categoryId": category?.id ?? "",
             "categoryName": category?.name ?? "",
         ]
         

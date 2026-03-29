@@ -161,7 +161,6 @@ struct LoginPage: View {
     }
 
     private func loginVendor() {
-        
         checkIfCustomerAccount(email: email){
             isVendor in
             if isVendor{
@@ -175,7 +174,7 @@ struct LoginPage: View {
                     isLoading = false
                     switch result {
                     case .success:
-                        print("Vendor Logged In ")
+                        print("Vendor logged in")
                     case .failure(let error):
                         self.errorMessage = error.localizedDescription
                         print("\(error.localizedDescription)")

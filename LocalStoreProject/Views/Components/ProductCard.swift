@@ -9,18 +9,14 @@ import SDWebImageSwiftUI
 import SwiftUI
 
 struct ProductCard: View {
-
     @ObservedObject var product: Product
 
     var body: some View {
         VStack(alignment: .leading) {
-
             if let imageURL = product.imageUrl, !imageURL.isEmpty {
                 WebImage(url: URL(string: imageURL))
                     .resizable()
-                    .scaledToFill()
                     .frame(height: 130)
-                    .clipped()
                     .cornerRadius(12)
             } else {
                 Rectangle()
@@ -68,7 +64,6 @@ struct ProductCard: View {
                         )
                 )
             }
-            .padding(.horizontal, 4)
         }
         .padding(8)
         .background(Color(.systemBackground))
