@@ -157,21 +157,33 @@ struct CheckoutView: View {
     }
     
     private func createOrderItems(orderId: String, userFirebaseUUID: String) {
+        guard let user = authManager.currentUser else {
+            self.isProcessingOrder = false
+            self.errorMessage = "User not logged in"
+            return
+        }
+        
+        //batch allows that all order items are saved for both the user and the vendor at the same time.
+        // changes happen together
         let batch = db.batch()
-        let orderItemsRef = db.collection("users")
+
+        //user order reference from firebase
+        let userOrderRef = db.collection("users")
             .document(userFirebaseUUID)
             .collection("orders")
             .document(orderId)
-            .collection("items")
-        
-        //LOOP to add each cart item as an order item
+
+        //refrence to the subcollection of user/orders
+        let userItemsRef = userOrderRef.collection("items")
+
         for cartItem in cartHolder.cartItems {
             guard let product = cartItem.product,
                   let productId = product.id,
                   let vendor = product.vendor,
                   let vendorId = vendor.firebaseUUID else { continue }
-            
+
             let orderItemId = UUID().uuidString
+
             let orderItemData: [String: Any] = [
                 "id": orderItemId,
                 "productId": productId.uuidString,
@@ -179,21 +191,48 @@ struct CheckoutView: View {
                 "productPrice": product.price,
                 "quantity": cartItem.quantity,
                 "vendorId": vendorId,
-                "vendorName": vendor.name ?? ""
+                "vendorName": vendor.name ?? "",
+                "userId": userFirebaseUUID,
+                "userName": user.name ?? ""
             ]
-            
-            let itemRef = orderItemsRef.document(orderItemId)
-            batch.setData(orderItemData, forDocument: itemRef)
+
+            //add order item data to the user in Firestore
+            let userItemRef = userItemsRef.document(orderItemId)
+            batch.setData(orderItemData, forDocument: userItemRef)
+
+            //copy info for vendor collection
+            let vendorOrderRef = db.collection("vendors")
+                .document(vendorId)
+                .collection("orders")
+                .document(orderId)
+
+            let vendorOrderData: [String: Any] = [
+                "id": orderId,
+                "userId": userFirebaseUUID,
+                "orderDate": Timestamp(date: Date()),
+                "status": "pending",
+                "total": product.price * Double(cartItem.quantity),
+                "itemCount": 1
+            ]
+
+            //merge the vendor order data into Firestore
+            batch.setData(vendorOrderData, forDocument: vendorOrderRef, merge: true)
+
+            //add same order item under subcollection items, this time for VENDOR
+            let vendorItemRef = vendorOrderRef
+                .collection("items")
+                .document(orderItemId)
+
+            batch.setData(orderItemData, forDocument: vendorItemRef)
         }
-        
-        //commit all order items
+
         batch.commit { error in
             if let error = error {
                 self.isProcessingOrder = false
                 self.errorMessage = "Failed to create order items: \(error.localizedDescription)"
                 return
             }
-            
+
             self.clearCartAfterOrder()
         }
     }

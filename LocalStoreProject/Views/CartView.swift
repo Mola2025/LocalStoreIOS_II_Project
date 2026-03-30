@@ -75,21 +75,10 @@ struct CartView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
             
-            Text("Browse products and add items to your cart")
+            Text("Browse products in Products Tab and add items to your cart")
                 .font(.subheadline)
                 .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
-            
-            Button(action: {
-                dismiss()
-            }) {
-                Text("Start Shopping")
-                    .padding(.horizontal, 30)
-                    .padding(.vertical, 12)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)

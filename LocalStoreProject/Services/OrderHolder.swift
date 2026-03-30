@@ -19,6 +19,7 @@ final class OrderHolder: ObservableObject {
     private let context: NSManagedObjectContext
     private let db = Firestore.firestore()
     private var currentUser: User?
+    private var currentVendor: Vendor?
     
     init(_ context: NSManagedObjectContext) {
         self.context = context
@@ -28,13 +29,23 @@ final class OrderHolder: ObservableObject {
     func setupForUser(_ user: User?) {
         self.currentUser = user
         if user != nil {
-            refreshOrders()
+            refreshUserOrders()
         } else {
             orders = []
         }
     }
     
-    func fetchOrdersFromFirestore(completion: @escaping (Result<Void, Error>) -> Void) {
+    // to get vendor's orders
+    func setupForVendor(_ vendor: Vendor?) {
+        self.currentVendor = vendor
+        if vendor != nil {
+            refreshVendorOrders()
+        } else {
+            orders = []
+        }
+    }
+    
+    func fetchUsersOrdersFromFirestore(completion: @escaping (Result<Void, Error>) -> Void) {
         guard let user = currentUser,
               let firebaseUUID = user.firebaseUUID else {
             completion(.failure(SimpleError("No user logged in")))
@@ -101,7 +112,7 @@ final class OrderHolder: ObservableObject {
                             order.total = data["total"] as? Double ?? 0.0
                             
                             // Fetch order items
-                            self.fetchOrderItems(userId: firebaseUUID, orderId: orderId, order: order) {
+                            self.fetchUserOrderItems(userId: firebaseUUID, orderId: orderId, order: order) {
                                 group.leave()
                             }
                         } catch {
@@ -122,7 +133,90 @@ final class OrderHolder: ObservableObject {
             }
     }
     
-    private func fetchOrderItems(userId: String, orderId: String, order: Order, completion: @escaping () -> Void) {
+    func fetchVendorOrdersFromFirestore(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let vendorId = currentVendor,
+              let firebaseUUID = vendorId.firebaseUUID else {
+            completion(.failure(SimpleError("No vendor logged in")))
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        
+        db.collection("vendors")
+            .document(firebaseUUID)
+            .collection("orders")
+            .order(by: "orderDate", descending: true)
+            .getDocuments { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        self.errorMessage = error.localizedDescription
+                        completion(.failure(error))
+                    }
+                    return
+                }
+                
+                guard let documents = snapshot?.documents, !documents.isEmpty else {
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        completion(.success(()))
+                    }
+                    return
+                }
+                
+                let group = DispatchGroup()
+                var fetchError: Error?
+                
+                for document in documents {
+                    group.enter()
+                    let data = document.data()
+                    let orderId = document.documentID
+                    
+                    self.context.perform {
+                        do {
+                            let request: NSFetchRequest<Order> = Order.fetchRequest()
+                            request.predicate = NSPredicate(format: "id == %@", UUID(uuidString: orderId)! as CVarArg)
+                            request.fetchLimit = 1
+                            
+                            let results = try self.context.fetch(request)
+                            let order: Order
+                            
+                            if let existingOrder = results.first {
+                                order = existingOrder
+                            } else {
+                                order = Order(context: self.context)
+                                order.id = UUID(uuidString: orderId) ?? UUID()
+                            }
+                            
+                            order.orderDate = (data["orderDate"] as? Timestamp)?.dateValue() ?? Date()
+                            order.status = data["status"] as? String ?? "pending"
+                            order.total = data["total"] as? Double ?? 0.0
+                            
+                            self.fetchVendorOrderItems(vendorId: firebaseUUID, orderId: orderId, order: order) {
+                                group.leave()
+                            }
+                        } catch {
+                            fetchError = error
+                            group.leave()
+                        }
+                    }
+                }
+                
+                group.notify(queue: .main) {
+                    if let error = fetchError {
+                        self.isLoading = false
+                        completion(.failure(error))
+                    } else {
+                        self.saveContext(completion: completion)
+                    }
+                }
+            }
+    }
+    
+    private func fetchUserOrderItems(userId: String, orderId: String, order: Order, completion: @escaping () -> Void) {
         db.collection("users")
             .document(userId)
             .collection("orders")
@@ -135,14 +229,14 @@ final class OrderHolder: ObservableObject {
                 }
                 
                 self.context.perform {
-                    // Clear existing items
+                    //clear items that exist already
                     if let existingItems = order.orderItems as? Set<OrderItem> {
                         for item in existingItems {
                             self.context.delete(item)
                         }
                     }
                     
-                    // Create new items
+                    //create new items
                     for document in documents {
                         let data = document.data()
                         let itemId = document.documentID
@@ -154,6 +248,47 @@ final class OrderHolder: ObservableObject {
                         orderItem.productPrice = data["productPrice"] as? Double ?? 0.0
                         orderItem.quantity = data["quantity"] as? Int32 ?? 0
                         orderItem.vendorId = data["vendorId"] as? String ?? ""
+                        orderItem.vendorName = data["vendorName"] as? String ?? ""
+                        orderItem.order = order
+                    }
+                    
+                    completion()
+                }
+            }
+    }
+    
+    private func fetchVendorOrderItems(vendorId: String, orderId: String, order: Order, completion: @escaping () -> Void) {
+        db.collection("vendors")
+            .document(vendorId)
+            .collection("orders")
+            .document(orderId)
+            .collection("items")
+            .getDocuments { [weak self] snapshot, error in
+                guard let self = self, let documents = snapshot?.documents else {
+                    completion()
+                    return
+                }
+                
+                self.context.perform {
+                    if let existingItems = order.orderItems as? Set<OrderItem> {
+                        for item in existingItems {
+                            self.context.delete(item)
+                        }
+                    }
+                    
+                    for document in documents {
+                        let data = document.data()
+                        let itemId = document.documentID
+                        
+                        let orderItem = OrderItem(context: self.context)
+                        orderItem.id = UUID(uuidString: itemId) ?? UUID()
+                        orderItem.productId = data["productId"] as? String ?? ""
+                        orderItem.productName = data["productName"] as? String ?? ""
+                        orderItem.productPrice = data["productPrice"] as? Double ?? 0.0
+                        orderItem.quantity = data["quantity"] as? Int32 ?? 0
+                        orderItem.userId = data["userId"] as? String ?? ""
+                        orderItem.userName = data["userName"] as? String ?? ""
+                        orderItem.vendorId = vendorId
                         orderItem.order = order
                     }
                     
@@ -163,18 +298,39 @@ final class OrderHolder: ObservableObject {
     }
     
     // MARK: - Refresh
-    func refreshOrders() {
+    func refreshUserOrders() {
         guard let user = currentUser else {
             orders = []
             return
         }
-        orders = fetchOrders(for: user)
+        orders = fetchUserOrders(for: user)
+    }
+    
+    func refreshVendorOrders() {
+        guard let vendor = currentVendor else {
+            orders = []
+            return
+        }
+        orders = fetchVendorOrders(for: vendor)
     }
     
     // MARK: - Fetcher
-    func fetchOrders(for user: User) -> [Order] {
+    func fetchUserOrders(for user: User) -> [Order] {
         let request: NSFetchRequest<Order> = Order.fetchRequest()
         request.predicate = NSPredicate(format: "user == %@", user)
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Order.orderDate, ascending: false)]
+        
+        do {
+            return try context.fetch(request)
+        } catch {
+            print("Error fetching orders: \(error)")
+            return []
+        }
+    }
+    
+    func fetchVendorOrders(for vendor: Vendor) -> [Order] {
+        let request: NSFetchRequest<Order> = Order.fetchRequest()
+        request.predicate = NSPredicate(format: "vendor == %@", vendor)
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Order.orderDate, ascending: false)]
         
         do {
@@ -214,7 +370,11 @@ final class OrderHolder: ObservableObject {
             try context.save()
             DispatchQueue.main.async {
                 self.isLoading = false
-                self.refreshOrders()
+                if self.currentUser != nil {
+                    self.refreshUserOrders()
+                } else if self.currentVendor != nil {
+                    self.refreshVendorOrders()
+                }
                 completion(.success(()))
             }
         } catch {

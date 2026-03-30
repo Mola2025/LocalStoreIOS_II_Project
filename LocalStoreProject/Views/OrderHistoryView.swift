@@ -10,6 +10,7 @@ import SwiftUI
 struct OrderHistoryView: View {
     @EnvironmentObject private var orderHolder: OrderHolder
     @EnvironmentObject private var authManager: AuthManager
+    @EnvironmentObject private var vendorAuthManager: VendorAuthManager
     @State private var selectedOrder: Order?
     @State private var showFilterMenu = false
     @State private var filterOption: FilterOption = .all
@@ -61,14 +62,24 @@ struct OrderHistoryView: View {
             .navigationTitle("Order History")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                if let user = authManager.currentUser {
-                    orderHolder.setupForUser(user)
-                    orderHolder.fetchOrdersFromFirestore { result in
+                if let vendor = vendorAuthManager.currentVendor {
+                    orderHolder.setupForVendor(vendor)
+                    orderHolder.fetchVendorOrdersFromFirestore { result in
                         switch result {
                         case .success:
                             break
                         case .failure(let error):
-                            print("Error loading orders: \(error.localizedDescription)")
+                            print("Error loading vendor orders: \(error.localizedDescription)")
+                        }
+                    }
+                } else if let user = authManager.currentUser {
+                    orderHolder.setupForUser(user)
+                    orderHolder.fetchUsersOrdersFromFirestore { result in
+                        switch result {
+                        case .success:
+                            break
+                        case .failure(let error):
+                            print("Error loading user orders: \(error.localizedDescription)")
                         }
                     }
                 }
@@ -119,7 +130,11 @@ struct OrderHistoryView: View {
     
     private var emptyStateMessage: String {
         if orderHolder.orders.isEmpty {
-            return "Your orders will appear here once you make a purchase"
+            if vendorAuthManager.currentVendor != nil {
+                return "Customer orders for your products will appear here"
+            } else {
+                return "Your orders will appear here once you make a purchase"
+            }
         } else {
             switch filterOption {
             case .all:
@@ -145,12 +160,23 @@ struct OrderHistoryView: View {
     }
     
     private func refreshOrders() {
-        orderHolder.fetchOrdersFromFirestore { result in
-            switch result {
-            case .success:
-                break
-            case .failure(let error):
-                print("Error refreshing orders: \(error.localizedDescription)")
+        if vendorAuthManager.currentVendor != nil {
+            orderHolder.fetchVendorOrdersFromFirestore { result in
+                switch result {
+                case .success:
+                    break
+                case .failure(let error):
+                    print("Error refreshing vendor orders: \(error.localizedDescription)")
+                }
+            }
+        } else if authManager.currentUser != nil {
+            orderHolder.fetchUsersOrdersFromFirestore { result in
+                switch result {
+                case .success:
+                    break
+                case .failure(let error):
+                    print("Error refreshing user orders: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -312,24 +338,42 @@ struct OrderDetailView: View {
 }
 
 struct OrderItemRow: View {
+    @EnvironmentObject private var vendorAuthManager: VendorAuthManager
+    @EnvironmentObject private var authManager: AuthManager
+
     let item: OrderItem
     
     var body: some View {
         HStack {
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(item.productName ?? "Product")
                     .font(.headline)
                 
-                HStack {
+                HStack(spacing: 4) {
                     Text("Qty: \(item.quantity)")
                         .font(.caption)
                         .foregroundColor(.gray)
                     
-                    if let vendorId = item.vendorId, !vendorId.isEmpty {
+                    if authManager.currentUser != nil,
+                       let vendorName = item.vendorName,
+                       !vendorName.isEmpty {
                         Text("•")
                             .font(.caption)
                             .foregroundColor(.gray)
-                        Text("Vendor Name: \(String(vendorId.prefix(6)))")
+                        
+                        Text("Sold by: \(vendorName)")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    else if vendorAuthManager.currentVendor != nil,
+                            let userName = item.userName,
+                            !userName.isEmpty {
+                        Text("•")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        Text("Ordered by: \(userName)")
                             .font(.caption)
                             .foregroundColor(.blue)
                     }

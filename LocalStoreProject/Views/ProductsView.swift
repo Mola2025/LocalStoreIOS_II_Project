@@ -129,10 +129,7 @@ struct ProductsView: View {
                     productHolder.refreshVendors(context)
                     productHolder.refreshProducts(context)
                 }
-//                productHolder.refreshProducts(context)
-//                if isVendor, let currentVendor = vendorAuthManager.currentVendor {
-//                    productHolder.setVendor(currentVendor, context)
-//                }
+                
                 //to display the categories
                 productHolder.seedCategories()
             }
