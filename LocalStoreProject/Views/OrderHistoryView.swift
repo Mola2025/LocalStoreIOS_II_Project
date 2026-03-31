@@ -87,6 +87,8 @@ struct OrderHistoryView: View {
             .sheet(item: $selectedOrder) { order in
                 OrderDetailView(order: order)
                     .environmentObject(orderHolder)
+                    .environmentObject(vendorAuthManager)
+                    .environmentObject(authManager)
             }
             .refreshable {
                 refreshOrders()
@@ -195,11 +197,7 @@ struct OrderRowView: View {
                 
                 Spacer()
                 
-                Text(order.status?.capitalized ?? "Pending")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .cornerRadius(8)
+                StatusBadge(status: order.status ?? "pending")
             }
             
             // Date
@@ -244,83 +242,56 @@ struct OrderRowView: View {
     }
 }
 
+struct StatusBadge: View {
+    let status: String
+    
+    private var colour: Color {
+        switch status.lowercased() {
+        case "delivered":  return .green
+        case "cancelled":  return .red
+        case "processing": return .orange
+        default:           return .gray   // pending
+        }
+    }
+    
+    var body: some View {
+        Text(status.capitalized)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(colour.opacity(0.15))
+            .foregroundColor(colour)
+            .cornerRadius(8)
+    }
+}
+
+// MARK: - OrderDetailView
+ 
 struct OrderDetailView: View {
     let order: Order
     @EnvironmentObject private var orderHolder: OrderHolder
+    @EnvironmentObject private var vendorAuthManager: VendorAuthManager
+    @EnvironmentObject private var authManager: AuthManager
     @Environment(\.dismiss) var dismiss
+
+    @State private var currentStatus: String = ""
+    @State private var isUpdating = false
+    @State private var updateError: String?
+    @State private var showConfirmation: Bool = false
+    @State private var pendingNewStatus: String = ""
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Order Header
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Order Details")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        HStack {
-                            Text("Status:")
-                                .font(.headline)
-                            Text(order.status?.capitalized ?? "Pending")
-                                .font(.headline)
-                        }
-                        
-                        HStack {
-                            Text("Order Date:")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                            Text(orderHolder.formattedDate(order))
-                                .font(.subheadline)
-                        }
-                        
-                        HStack {
-                            Text("Order ID:")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                            Text(order.id?.uuidString ?? "")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
+                    orderHeaderSection
+                    itemsSection
+                    totalSection
                     
-                    // Items
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Items")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        let items = orderHolder.items(for: order)
-                        ForEach(items, id: \.id) { item in
-                            OrderItemRow(item: item)
-                            
-                            if item.id != items.last?.id {
-                                Divider()
-                            }
-                        }
+                    if vendorCanActOnOrder {
+                        vendorActionSection
                     }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-                    
-                    // Total
-                    HStack {
-                        Text("Total Amount:")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        Spacer()
-                        Text(order.total, format: .currency(code: "USD"))
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.blue)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
                 }
                 .padding()
             }
@@ -328,9 +299,203 @@ struct OrderDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        dismiss()
+                    Button("Close") { dismiss() }
+                }
+            }
+            .alert("Confirm action", isPresented: $showConfirmation) {
+                Button("Confirm", role: .destructive) {
+                    commitStatusUpdate(to: pendingNewStatus)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                let verb = pendingNewStatus == "delivered" ? "mark as Delivered" : "Cancel"
+                Text("Are you sure you want to \(verb) this order?")
+            }
+            .safeAreaInset(edge: .bottom) {
+                if let errorMsg = updateError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text(errorMsg)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                        Spacer()
+                        Button { updateError = nil } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
                     }
+                    .padding(12)
+                    .background(Color(.systemRed).opacity(0.08))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
+            }
+        }
+        .onAppear {
+            currentStatus = order.status ?? "pending"
+        }
+    }
+    
+    // MARK: - Sub-sections
+    
+    private var orderHeaderSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Order Details")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            HStack {
+                Text("Status:")
+                    .font(.headline)
+                StatusBadge(status: currentStatus)
+            }
+            
+            HStack {
+                Text("Order Date:")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                Text(orderHolder.formattedDate(order))
+                    .font(.subheadline)
+            }
+            
+            HStack {
+                Text("Order ID:")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                Text(order.id?.uuidString ?? "")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+    
+    private var itemsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Items")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            let items = orderHolder.items(for: order)
+            ForEach(items, id: \.id) { item in
+                OrderItemRow(item: item)
+                
+                if item.id != items.last?.id {
+                    Divider()
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+    
+    private var totalSection: some View {
+        HStack {
+            Text("Total Amount:")
+                .font(.title3)
+                .fontWeight(.bold)
+            Spacer()
+            Text(order.total, format: .currency(code: "USD"))
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.blue)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+    
+    private var vendorActionSection: some View {
+        VStack(spacing: 12) {
+            Text("Update Order Status")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            HStack(spacing: 12) {
+                Button {
+                    pendingNewStatus = "delivered"
+                    showConfirmation = true
+                } label: {
+                    Label("Mark Delivered", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .disabled(isUpdating)
+                
+                Button {
+                    pendingNewStatus = "cancelled"
+                    showConfirmation = true
+                } label: {
+                    Label("Cancel Order", systemImage: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .disabled(isUpdating)
+            }
+            
+            if isUpdating {
+                ProgressView("Updating…")
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+    
+    // MARK: - Helpers
+    
+    // Check if there is an product from the current vendor in the order
+    private var vendorCanActOnOrder: Bool {
+        guard let vendor = vendorAuthManager.currentVendor,
+              let vendorFirebaseUUID = vendor.firebaseUUID else { return false }
+        
+        let isTerminal = currentStatus == "delivered" || currentStatus == "cancelled"
+        guard !isTerminal else { return false }
+        
+        let items = orderHolder.items(for: order)
+        return items.contains { $0.vendorId == vendorFirebaseUUID }
+    }
+    
+    private func commitStatusUpdate(to newStatus: String) {
+        guard let vendor = vendorAuthManager.currentVendor,
+              let vendorFirebaseUUID = vendor.firebaseUUID else { return }
+        
+        isUpdating = true
+        updateError = nil
+        
+        Task {
+            do {
+                try await orderHolder.updateOrderStatus(
+                    order: order,
+                    newStatus: newStatus,
+                    vendorFirebaseUUID: vendorFirebaseUUID
+                )
+                await MainActor.run {
+                    currentStatus = newStatus
+                    isUpdating = false
+                }
+            } catch {
+                await MainActor.run {
+                    updateError = error.localizedDescription
+                    isUpdating = false
                 }
             }
         }

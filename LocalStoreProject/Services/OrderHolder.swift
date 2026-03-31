@@ -194,6 +194,7 @@ final class OrderHolder: ObservableObject {
                             order.orderDate = (data["orderDate"] as? Timestamp)?.dateValue() ?? Date()
                             order.status = data["status"] as? String ?? "pending"
                             order.total = data["total"] as? Double ?? 0.0
+                            order.vendor = self.currentVendor
                             
                             self.fetchVendorOrderItems(vendorId: firebaseUUID, orderId: orderId, order: order) {
                                 group.leave()
@@ -296,6 +297,53 @@ final class OrderHolder: ObservableObject {
                 }
             }
     }
+    
+    // MARK: - Update Order Status
+    
+    func updateOrderStatus(
+            order: Order,
+            newStatus: String,
+            vendorFirebaseUUID: String
+        ) async throws {
+            guard let orderId = order.id?.uuidString else {
+                throw SimpleError("Invalid order ID")
+            }
+            
+            // Guard: vendor must own at least one item in this order
+            let items = self.items(for: order)
+            guard items.contains(where: { $0.vendorId == vendorFirebaseUUID }) else {
+                throw SimpleError("You are not authorised to update this order")
+            }
+            
+            await MainActor.run { isLoading = true }
+            
+            let updatedFields: [String: Any] = ["status": newStatus]
+            
+            try await db.collection("vendors")
+                .document(vendorFirebaseUUID)
+                .collection("orders")
+                .document(orderId)
+                .updateData(updatedFields)
+            
+            if let buyerUserId = items.first(where: { $0.vendorId == vendorFirebaseUUID })?.userId,
+               !buyerUserId.isEmpty {
+                try await db.collection("users")
+                    .document(buyerUserId)
+                    .collection("orders")
+                    .document(orderId)
+                    .updateData(updatedFields)
+            }
+            
+            try await context.perform {
+                order.status = newStatus
+                try self.context.save()
+            }
+            
+            await MainActor.run {
+                isLoading = false
+                refreshVendorOrders()
+            }
+        }
     
     // MARK: - Refresh
     func refreshUserOrders() {

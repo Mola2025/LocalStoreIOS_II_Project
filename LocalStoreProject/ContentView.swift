@@ -36,6 +36,10 @@ struct ContentView: View {
                         Label("Cart", systemImage: "cart.fill")
                     }
                 
+                AllVendorsMapView().tabItem {
+                    Label("Map", systemImage: "map")
+                }
+                
                 ProfileView()
                     .tabItem {
                         Label("Profile", systemImage: "person")
