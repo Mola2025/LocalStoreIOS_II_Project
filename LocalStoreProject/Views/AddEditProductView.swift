@@ -138,7 +138,7 @@ struct AddEditProductView: View {
                 productHolder.fetchProducts { result in
                     switch result {
                     case .success:
-                        print("Product details fetched")
+                        break
                     case .failure(let error):
                         errorMessage = error.localizedDescription
                     }

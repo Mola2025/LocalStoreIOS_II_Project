@@ -12,7 +12,7 @@ import FirebaseAuth
 struct ProductsView: View {
     @Environment(\.managedObjectContext) private var context
     @EnvironmentObject private var productHolder: ProductHolder
-//    @EnvironmentObject private var authManager: AuthManager
+    @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var vendorAuthManager: VendorAuthManager
     @EnvironmentObject private var cartHolder: CartHolder
     @State private var searchProduct = ""
@@ -66,71 +66,81 @@ struct ProductsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        if isVendor, let currentVendor = vendorAuthManager.currentVendor {
+                        if vendorAuthManager.isAuthenticated {
                             Button("My Products") {
-                                productHolder.setVendor(currentVendor, context)
+                                if let currentVendor = vendorAuthManager.currentVendor {
+                                    productHolder.setupForVendor(currentVendor)
+                                    productHolder.fetchProducts { _ in }
+                                }
                             }
-                        }
-                        
-                        else {
+                        } else {
                             Button("All Vendors") {
                                 productHolder.setVendor(nil, context)
+                                productHolder.setupForCustomer()
+                                productHolder.fetchProducts { _ in }
                             }
+                            
+                            Divider()
                             
                             ForEach(productHolder.vendors) { vendor in
                                 Button(vendor.name ?? "Vendor") {
+                                    //filter products by vendors
                                     productHolder.setVendor(vendor, context)
                                 }
                             }
                         }
                     } label: {
                         HStack {
-                            if isVendor, let currentVendor = vendorAuthManager.currentVendor {
+                            if vendorAuthManager.isAuthenticated {
                                 Text("My Products")
-                                    .font(.caption)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption)
+                            } else {
+                                Text(productHolder.selectedVendor?.name ?? "All Vendors")
                             }
-                            else {
-                                Text(productHolder.selectedVendor?.name ?? "")
-                                    .font(.caption)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption)
-                            }
+                            Image(systemName: "chevron.down")
                         }
+                        .font(.caption)
                         .padding(8)
                         .background(Color(.systemGray6))
                         .cornerRadius(8)
                     }
                 }
                 
+                //plus button for vendors only
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if vendorAuthManager.isAuthenticated {
                         NavigationLink(destination: AddEditProductView(productToEdit: nil)) {
                             Image(systemName: "plus")
-                                .font(.title2)
-                                .foregroundStyle(.black)
                         }
                     }
                 }
             }
             .onAppear {
+                //vendor logged in
                 if let vendor = vendorAuthManager.currentVendor {
+                    //show products only for lgged in vendor
                     productHolder.setupForVendor(vendor)
                     productHolder.fetchProducts { result in
                         switch result {
                         case .success:
-                            print("Products for that vendor are shown")
+                            break
                         case .failure(let error):
-                            print("Error loading vendors: \(error.localizedDescription)")
+                            print("Error loading vendor products: \(error.localizedDescription)")
                         }
                     }
-                } else {
-                    productHolder.refreshVendors(context)
-                    productHolder.refreshProducts(context)
+                } else if let _ = authManager.currentUser {
+                    //show all products from vendors for customers
+                    productHolder.setupForCustomer()
+                    productHolder.fetchProducts { result in
+                        switch result {
+                        case .success:
+                            print("All products shown for customer")
+                        case .failure(let error):
+                            print("Error loading products: \(error.localizedDescription)")
+                        }
+                    }
                 }
                 
-                //to display the categories
+                productHolder.refreshVendors(context)
                 productHolder.seedCategories()
             }
             .sheet(item: $selectedProduct) { product in

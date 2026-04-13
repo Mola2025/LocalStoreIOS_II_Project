@@ -30,21 +30,157 @@ final class ProductHolder: ObservableObject {
         refreshVendors(context)
     }
     
+    func setupForCustomer() {
+        self.currentVendor = nil
+        refreshProducts(context)
+        refreshCategories(context)
+        refreshVendors(context)
+    }
+    
     init(_ context: NSManagedObjectContext) {
         self.context = context
     }
-        
+    
     func fetchProducts(completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let vendor = currentVendor,
-              let firebaseUUID = vendor.firebaseUUID else {
-            completion(.failure(SimpleError("No vendor logged in")))
-            return
+        if let vendor = currentVendor, let firebaseUUID = vendor.firebaseUUID {
+            // Vendor mode - fetch only this vendor's products
+            fetchProductsForVendor(firebaseUUID: firebaseUUID, completion: completion)
+        } else {
+            // Customer mode - fetch ALL products from ALL vendors
+            fetchAllProducts(completion: completion)
         }
-        
+    }
+    
+    private func fetchProductsForVendor(firebaseUUID: String, completion: @escaping (Result<Void, Error>) -> Void) {
         db.collection("vendors")
             .document(firebaseUUID)
             .collection("products")
             .getDocuments { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    completion(.success(()))
+                    return
+                }
+                
+                self.context.perform {
+                    for document in documents {
+                        let data = document.data()
+                        let productId = document.documentID
+                        
+                        guard let productUUID = UUID(uuidString: productId) else {
+                            print("Invalid UUID string: \(productId)")
+                            continue
+                        }
+                        
+                        let productRequest: NSFetchRequest<Product> = Product.fetchRequest()
+                        productRequest.predicate = NSPredicate(format: "id == %@", productUUID as CVarArg)
+                        
+                        do {
+                            let results = try self.context.fetch(productRequest)
+                            
+                            if let existingProduct = results.first {
+                                self.updateProductFromFirestore(data, product: existingProduct)
+                            } else {
+                                self.createProductFromFirestore(data, id: productUUID)
+                            }
+                        } catch {
+                            print("Error processing product: \(error)")
+                        }
+                    }
+                    
+                    do {
+                        try self.context.save()
+                        DispatchQueue.main.async {
+                            self.refreshProducts(self.context)
+                            self.refreshCategories(self.context)
+                            completion(.success(()))
+                        }
+                    } catch {
+                        DispatchQueue.main.async {
+                            completion(.failure(error))
+                        }
+                    }
+                }
+            }
+    }
+        
+//    func fetchProducts(completion: @escaping (Result<Void, Error>) -> Void) {
+//        guard let vendor = currentVendor,
+//              let firebaseUUID = vendor.firebaseUUID else {
+//            completion(.failure(SimpleError("No vendor logged in")))
+//            return
+//        }
+//        
+//        db.collection("vendors")
+//            .document(firebaseUUID)
+//            .collection("products")
+//            .getDocuments { [weak self] snapshot, error in
+//            guard let self = self else { return }
+//            
+//            if let error = error {
+//                completion(.failure(error))
+//                return
+//            }
+//            
+//            guard let documents = snapshot?.documents else {
+//                completion(.success(()))
+//                return
+//            }
+//            
+//            self.context.perform {
+//                for document in documents {
+//                    let data = document.data()
+//                    let productId = document.documentID
+//                    
+//                    //create String to UUID for CoreData
+//                    guard let productUUID = UUID(uuidString: productId) else {
+//                        print("Invalid UUID string: \(productId)")
+//                        return
+//                    }
+//                    
+//                    //check if product exists in Firestore
+//                    let productRequest: NSFetchRequest<Product> = Product.fetchRequest()
+//                    productRequest.predicate = NSPredicate(format: "id == %@", productUUID as CVarArg)
+//                    
+//                    do {
+//                        let results = try self.context.fetch(productRequest)
+//                        
+//                        if let existingProduct = results.first {
+//                            self.updateProductFromFirestore(data, product: existingProduct)
+//                        } else {
+//                            self.createProductFromFirestore(data, id: productUUID)
+//                        }
+//                    } catch {
+//                        print("Error processing product: \(error)")
+//                    }
+//                }
+//                
+//                //save and refresh on main thread
+//                do {
+//                    try self.context.save()
+//                    DispatchQueue.main.async {
+//                        self.refreshProducts(self.context)
+//                        self.refreshCategories(self.context)
+//                        completion(.success(()))
+//                    }
+//                } catch {
+//                    DispatchQueue.main.async {
+//                        completion(.failure(error))
+//                    }
+//                }
+//            }
+//        }
+//    }
+    
+    private func fetchAllProducts(completion: @escaping (Result<Void, Error>) -> Void) {
+        // First get all vendors
+        db.collection("vendors").getDocuments { [weak self] vendorSnapshot, error in
             guard let self = self else { return }
             
             if let error = error {
@@ -52,49 +188,72 @@ final class ProductHolder: ObservableObject {
                 return
             }
             
-            guard let documents = snapshot?.documents else {
+            guard let vendorDocuments = vendorSnapshot?.documents else {
                 completion(.success(()))
                 return
             }
             
-            self.context.perform {
-                for document in documents {
-                    let data = document.data()
-                    let productId = document.documentID
-                    
-                    //create String to UUID for CoreData
-                    guard let productUUID = UUID(uuidString: productId) else {
-                        print("Invalid UUID string: \(productId)")
-                        return
-                    }
-                    
-                    //check if product exists in Firestore
-                    let productRequest: NSFetchRequest<Product> = Product.fetchRequest()
-                    productRequest.predicate = NSPredicate(format: "id == %@", productUUID as CVarArg)
-                    
-                    do {
-                        let results = try self.context.fetch(productRequest)
-                        
-                        if let existingProduct = results.first {
-                            self.updateProductFromFirestore(data, product: existingProduct)
-                        } else {
-                            self.createProductFromFirestore(data, id: productUUID)
-                        }
-                    } catch {
-                        print("Error processing product: \(error)")
-                    }
-                }
+            let group = DispatchGroup()
+            var fetchError: Error?
+            
+            for vendorDoc in vendorDocuments {
+                let vendorId = vendorDoc.documentID
                 
-                //save and refresh on main thread
-                do {
-                    try self.context.save()
-                    DispatchQueue.main.async {
+                group.enter()
+                
+                self.db.collection("vendors")
+                    .document(vendorId)
+                    .collection("products")
+                    .getDocuments { snapshot, error in
+                        defer { group.leave() }
+                        
+                        if let error = error {
+                            fetchError = error
+                            return
+                        }
+                        
+                        guard let documents = snapshot?.documents else { return }
+                        
+                        self.context.perform {
+                            for document in documents {
+                                let data = document.data()
+                                let productId = document.documentID
+                                
+                                guard let productUUID = UUID(uuidString: productId) else {
+                                    print("Invalid UUID string: \(productId)")
+                                    continue
+                                }
+                                
+                                let productRequest: NSFetchRequest<Product> = Product.fetchRequest()
+                                productRequest.predicate = NSPredicate(format: "id == %@", productUUID as CVarArg)
+                                
+                                do {
+                                    let results = try self.context.fetch(productRequest)
+                                    
+                                    if let existingProduct = results.first {
+                                        self.updateProductFromFirestore(data, product: existingProduct)
+                                    } else {
+                                        self.createProductFromFirestore(data, id: productUUID)
+                                    }
+                                } catch {
+                                    print("Error processing product: \(error)")
+                                }
+                            }
+                        }
+                    }
+            }
+            
+            group.notify(queue: .main) {
+                if let error = fetchError {
+                    completion(.failure(error))
+                } else {
+                    do {
+                        try self.context.save()
                         self.refreshProducts(self.context)
                         self.refreshCategories(self.context)
+                        self.refreshVendors(self.context)
                         completion(.success(()))
-                    }
-                } catch {
-                    DispatchQueue.main.async {
+                    } catch {
                         completion(.failure(error))
                     }
                 }
